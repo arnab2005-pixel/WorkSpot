@@ -1,0 +1,224 @@
+version: '3.9'
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: pm-ajay-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  mongodb:
+    image: mongo:7.0
+    container_name: pm-ajay-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: pm_ajay
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FreeSWITCH for telephony (mod_audio_fork for media forking)
+  freeswitch:
+    image: ghcr.io/signalwire/freeswitch:1.10.10-release
+    container_name: pm-ajay-freeswitch
+    ports:
+      - "5060:5060/udp"   # SIP signaling
+      - "5060:5060/tcp"   # SIP signaling
+      - "5080:5080/tcp"   # WebSocket SIP
+      - "16384-16484:16384-16484/udp"  # RTP media range
+    volumes:
+      - ./config/freeswitch_dialplan.xml:/etc/freeswitch/dialplan/public/pm-ajay.xml:ro
+      - ./config/freeswitch_vars.xml:/etc/freeswitch/vars.xml:ro
+    environment:
+      - FS_LOG_LEVEL=7
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "fs_cli", "-x", "version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Kamailio SIP Gateway (optional, for load balancing)
+  kamailio:
+    image: kamailio/kamailio:5.8
+    container_name: pm-ajay-kamailio
+    ports:
+      - "5061:5060/udp"
+      - "5061:5060/tcp"
+    volumes:
+      - ./config/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
+    depends_on:
+      - freeswitch
+    profiles:
+      - sip-gateway
+
+  # vLLM server for Qwen2.5-3B-Instruct
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: pm-ajay-vllm
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_HOME=/models
+      - VLLM_WORKER_MULTIPROC_METHOD=spawn
+    command: >
+      --model Qwen/Qwen2.5-3B-Instruct
+      --tensor-parallel-size 1
+      --gpu-memory-utilization 0.85
+      --max-model-len 4096
+      --dtype auto
+      --quantization awq
+      --enforce-eager
+      --served-model-name qwen2.5-3b-instruct
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - hf_cache:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - gpu
+
+  # Indic-TTS service (FastPitch + HiFi-GAN)
+  indic-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.tts
+    container_name: pm-ajay-tts
+    ports:
+      - "8001:8000"
+    environment:
+      - HF_HOME=/models
+      - MODEL_NAME=ai4bharat/indic-tts-fastpitch-hifigan
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - hf_cache:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - gpu
+
+  # Whisper ASR service (faster-whisper)
+  whisper:
+    build:
+      context: .
+      dockerfile: Dockerfile.asr
+    container_name: pm-ajay-whisper
+    ports:
+      - "8002:8000"
+    environment:
+      - HF_HOME=/models
+      - MODEL_SIZE=small
+      - COMPUTE_TYPE=int8_float16
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    volumes:
+      - hf_cache:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - gpu
+
+  # Main application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: pm-ajay-app
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DATABASE=pm_ajay
+      - VLLM_BASE_URL=http://vllm:8000/v1
+      - TTS_BASE_URL=http://indic-tts:8000
+      - WHISPER_BASE_URL=http://whisper:8000
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      vllm:
+        condition: service_healthy
+      indic-tts:
+        condition: service_healthy
+      whisper:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    command: python -m api.server
+    profiles:
+      - gpu
+
+  # Development profile (without GPU services)
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    container_name: pm-ajay-app-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_DATABASE=pm_ajay
+      - VLLM_BASE_URL=http://host.docker.internal:8000/v1
+      - TTS_BASE_URL=http://host.docker.internal:8001
+      - WHISPER_BASE_URL=http://host.docker.internal:8002
+      - LOG_LEVEL=DEBUG
+      - MOCK_MODE=true
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - ./:/app
+    command: python -m api.server
+
+volumes:
+  redis_data:
+  mongo_data:
+  hf_cache:
