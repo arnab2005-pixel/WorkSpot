@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+
+# Models & Data
+models/
+*.onnx
+*.bin
+data/
+
+# Docker
+.docker/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Audio
+*.wav
+*.mp3
