@@ -197,6 +197,10 @@ class SessionData(BaseModel):
         return len(self.get_missing_slots()) == 0
 
 
+# Alias for compatibility with schemas/__init__.py and consumers
+SessionState = SessionData
+
+
 class SessionCreate(BaseModel):
     """Input for creating a new session."""
     
