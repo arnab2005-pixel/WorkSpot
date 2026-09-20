@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FreeSWITCH Dialplan for PM-AJAY Voice Assistant
+  Place at: /etc/freeswitch/dialplan/public/pm-ajay.xml
+  
+  This dialplan handles inbound calls and forks audio to the media server
+  via mod_audio_fork over WebSocket.
+-->
+<include>
+  <context name="public">
+    <!-- Main entry point for PM-AJAY calls -->
+    <extension name="pm-ajay-inbound">
+      <condition field="destination_number" expression="^(\+91|0)?91?[6-9]\d{9}$">
+        <!-- Answer the call -->
+        <action application="answer"/>
+        
+        <!-- Set call variables -->
+        <action application="set" data="hangup_after_bridge=true"/>
+        <action application="set" data="continue_on_fail=true"/>
+        <action application="set" data="media_bug_answer_req=true"/>
+        
+        <!-- Record caller ID for session tracking -->
+        <action application="set" data="pm_ajay_caller_id=${caller_id_number}"/>
+        <action application="set" data="pm_ajay_call_uuid=${uuid}"/>
+        
+        <!-- Start audio forking to media server via WebSocket -->
+        <!-- mod_audio_fork streams 8kHz 16-bit linear PCM -->
+        <action application="set" data="audio_fork_url=ws://host.docker.internal:8080/ws/media/${pm_ajay_call_uuid}"/>
+        <action application="audio_fork" data="start ${audio_fork_url}"/>
+        
+        <!-- Play welcome prompt while connection establishes -->
+        <action application="playback" data="tone_stream://%(200,0,500)"/>
+        <action application="sleep" data="500"/>
+        
+        <!-- Bridge to the voice assistant (IVR application) -->
+        <action application="bridge" data="websocket:ws://host.docker.internal:8080/ws/media/${pm_ajay_call_uuid}"/>
+        
+        <!-- Cleanup on hangup -->
+        <action application="audio_fork" data="stop"/>
+      </condition>
+    </extension>
+
+    <!-- Outbound call support (for callbacks) -->
+    <extension name="pm-ajay-outbound">
+      <condition field="destination_number" expression="^pm-ajay-outbound$">
+        <action application="set" data="pm_ajay_caller_id=${outbound_caller_id_number}"/>
+        <action application="set" data="pm_ajay_call_uuid=${uuid}"/>
+        
+        <!-- Originate call to beneficiary -->
+        <action application="originate" data="{origination_caller_id_number=18001234567}sofia/gateway/default/${pm_ajay_caller_id} &park()"/>
+      </condition>
+    </extension>
+
+    <!-- WebSocket media endpoint for FreeSWITCH to connect to our media server -->
+    <extension name="pm-ajay-media-ws">
+      <condition field="destination_number" expression="^pm-ajay-media$">
+        <action application="answer"/>
+        <action application="set" data="media_bug_answer_req=true"/>
+        <action application="set" data="rtp_secure_media=false"/>
+        <action application="set" data="absolute_codec_string=PCMU"/>
+        
+        <!-- Fork audio to our media server -->
+        <action application="audio_fork" data="start ws://host.docker.internal:8080/ws/media/${uuid}"/>
+        
+        <!-- Keep call alive -->
+        <action application="sleep" data="3600000"/>
+        
+        <action application="audio_fork" data="stop"/>
+        <action application="hangup"/>
+      </condition>
+    </extension>
+
+    <!-- DTMF fallback for menu navigation -->
+    <extension name="pm-ajay-dtmf">
+      <condition field="destination_number" expression="^pm-ajay-dtmf$">
+        <action application="answer"/>
+        <action application="playback" data="phrase:pm_ajay_welcome"/>
+        <action application="read" data="1 1 'dtmf' 3000 #"/>
+        <action application="transfer" data="${dtmf} XML default"/>
+      </condition>
+    </extension>
+
+    <!-- Error handling -->
+    <extension name="pm-ajay-error">
+      <condition field="destination_number" expression="^pm-ajay-error$">
+        <action application="answer"/>
+        <action application="playback" data="phrase:pm_ajay_error"/>
+        <action application="sleep" data="1000"/>
+        <action application="hangup"/>
+      </condition>
+    </extension>
+  </context>
+
+  <!-- Internal context for IVR logic -->
+  <context name="pm-ajay-ivr">
+    <!-- Consent capture -->
+    <extension name="pm-ajay-consent">
+      <condition field="destination_number" expression="^consent$">
+        <action application="playback" data="phrase:pm_ajay_consent_prompt"/>
+        <action application="record_session" data="${pm_ajay_call_uuid}_consent.wav"/>
+        <action application="transfer" data="geographic_intake XML pm-ajay-ivr"/>
+      </condition>
+    </extension>
+
+    <!-- Geographic intake -->
+    <extension name="pm-ajay-geographic">
+      <condition field="destination_number" expression="^geographic_intake$">
+        <action application="playback" data="phrase:pm_ajay_location_prompt"/>
+        <action application="record_session" data="${pm_ajay_call_uuid}_location.wav"/>
+        <action application="transfer" data="vocational_discovery XML pm-ajay-ivr"/>
+      </condition>
+    </extension>
+
+    <!-- Vocational discovery -->
+    <extension name="pm-ajay-vocational">
+      <condition field="destination_number" expression="^vocational_discovery$">
+        <action application="playback" data="phrase:pm_ajay_trade_prompt"/>
+        <action application="record_session" data="${pm_ajay_call_uuid}_trade.wav"/>
+        <action application="transfer" data="mobility_intent XML pm-ajay-ivr"/>
+      </condition>
+    </extension>
+
+    <!-- Mobility and intent -->
+    <extension name="pm-ajay-mobility">
+      <condition field="destination_number" expression="^mobility_intent$">
+        <action application="playback" data="phrase:pm_ajay_mobility_prompt"/>
+        <action application="record_session" data="${pm_ajay_call_uuid}_mobility.wav"/>
+        <action application="transfer" data="recommendation XML pm-ajay-ivr"/>
+      </condition>
+    </extension>
+
+    <!-- Recommendation delivery -->
+    <extension name="pm-ajay-recommendation">
+      <condition field="destination_number" expression="^recommendation$">
+        <action application="playback" data="phrase:pm_ajay_recommendations"/>
+        <action application="hangup"/>
+      </condition>
+    </extension>
+  </context>
+</include>
