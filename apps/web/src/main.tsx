@@ -298,8 +298,8 @@ function App() {
   return <div className="app-shell">{!isProduct ? <><input ref={audioFileInputRef} type="file" accept="audio/*,.wav,.mp3,.ogg,.webm,.m4a,.aac,.flac" style={{ display: "none" }} onChange={handleAudioFileUpload} /><Onboarding screen={screen} language={language} setLanguage={setLanguage} copy={c} mobile={mobile} setMobile={setMobile} otpSent={otpSent} setOtpSent={setOtpSent} textMode={textMode} setTextMode={setTextMode} answer={answer} setAnswer={setAnswer} recordingSeconds={recordingSeconds} setRecordingSeconds={setRecordingSeconds} interviewIndex={interviewIndex} processing={processing} currentQuestion={activeQuestion} options={dynamicOptions} onOptionSelect={(opt: string) => void submitTurn(opt)} audioUrl={recordingUrl} isRecording={isRecording} onStart={() => goTo("language")} onLogin={() => setOtpSent(true)} onVerify={async () => { await createSession(); goTo("workIntro"); }} onLanguageContinue={() => goTo("login")} onSpeak={startRecording} onStop={stopRecording} onSend={finishAnswer} onNext={nextInterview} onListen={listen} onBack={() => goTo("workIntro")} onUploadAudio={triggerAudioFileUpload} /></> : <AppFrame screen={screen as NavScreen} language={language} setLanguage={setLanguage} copy={c} profile={profile} setProfile={setProfile} goTo={goTo} onLogout={logout} opportunities={opportunitiesList} filter={filter} setFilter={setFilter} activeOpportunity={activeOpportunity} setActiveOpportunity={setActiveOpportunity} saved={saved} setSaved={setSaved} advisorInput={advisorInput} setAdvisorInput={setAdvisorInput} advisorMessages={advisorMessages} setAdvisorMessages={setAdvisorMessages} sessionId={sessionId} />}</div>;
 }
 
-function Logo({ tagline = "Your skills. Your work. Your future." }: { tagline?: string }) { return <div className="logo"><span>W</span><div><strong>WorkSpot</strong><small>{tagline}</small></div></div>; }
-function OnboardingFrame({ children, language, setLanguage, copy }: { children: React.ReactNode; language: Language; setLanguage: (v: Language) => void; copy?: any }) { const tagline = copy?.ui?.brandTagline ?? "Your skills. Your work. Your future."; return <div className="onboarding"><header className="onboarding-header"><Logo tagline={tagline} /><LanguageSelector language={language} setLanguage={(value) => setLanguage(value as Language)} /></header>{children}<footer className="simple-footer"><span>WorkSpot · {tagline}</span><span>Protected by design · Voice-first · Multilingual</span></footer></div>; }
+function Logo({ tagline = "Your skills. Your work. Your future." }: { tagline?: string }) { return <div className="logo"><span>W</span><div><strong>WorkSpot</strong><small className="brand-tagline">{tagline}</small></div></div>; }
+function OnboardingFrame({ children, language, setLanguage, copy }: { children: React.ReactNode; language: Language; setLanguage: (v: Language) => void; copy?: any }) { const tagline = copy?.ui?.brandTagline ?? "Your skills. Your work. Your future."; return <div className="onboarding"><header className="onboarding-header"><Logo tagline={tagline} /><LanguageSelector language={language} setLanguage={(value) => setLanguage(value as Language)} /></header>{children}<footer className="simple-footer"><span className="brand-tagline">WorkSpot · {tagline}</span><span>Protected by design · Voice-first · Multilingual</span></footer></div>; }
 function AudioPreview({ audioUrl, duration, language, fallbackText }: { audioUrl: string | null; duration: number; language: string; fallbackText: string }) { const audioRef = useRef<HTMLAudioElement | null>(null); const [playing, setPlaying] = useState(false); useEffect(() => { setPlaying(false); if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; } }, [audioUrl]); async function togglePlayback() { if (!audioUrl || !audioRef.current) { setPlaying(true); speakText(fallbackText, language); window.setTimeout(() => setPlaying(false), 1600); return; } if (playing) { audioRef.current.pause(); setPlaying(false); } else { try { await audioRef.current.play(); setPlaying(true); } catch { setPlaying(false); } } } return <div className="audio-player"><button type="button" aria-label={playing ? "Pause recording" : "Play recording"} onClick={togglePlayback}>{playing ? "■" : "▶"}</button><strong>00:{String(duration || 8).padStart(2, "0")}</strong><span className="audio-line"><i className={playing ? "playing" : ""} /></span><span>1:00</span>{audioUrl && <audio ref={audioRef} src={audioUrl} onEnded={() => setPlaying(false)} />}</div>; }
 
 function Onboarding(p: any) { if (p.screen === "welcome") return <div className="welcome-page"><header><Logo tagline={p.copy.ui?.brandTagline} /><div className="welcome-header-actions"><LanguageSelector language={p.language} setLanguage={p.setLanguage} /><button className="ghost-button" onClick={p.onStart}>{p.copy.ui?.signIn ?? "Sign in"}</button></div></header><div className="welcome-grid"><div className="welcome-copy"><span className="eyebrow">{p.copy.ui?.welcomeEyebrow ?? "AI-POWERED LIVELIHOOD ASSISTANT"}</span><h1>{p.copy.ui?.welcomeTitle ?? "Find the work that fits"} <em>{p.copy.ui?.welcomeAccent ?? "you."}</em></h1><p>{p.copy.ui?.welcomeDescription ?? "Tell WorkSpot what you do, what you know, and what you want to achieve. Our AI will help you discover training, jobs, and livelihood opportunities."}</p><div className="welcome-actions"><button className="primary-button" onClick={p.onStart}>{p.copy.start}<span>→</span></button><button className="secondary-button" onClick={() => document.getElementById("learn-more")?.scrollIntoView({ behavior: "smooth" })}>{p.copy.ui?.learnMore ?? "Learn more"}</button></div><div className="trust-row"><span>▣ {p.copy.ui?.protected ?? "Your information stays protected"}</span><span>◎ {p.copy.ui?.multilingual ?? "Multilingual"}</span><span>◉ {p.copy.ui?.voiceFirst ?? "Voice-first"}</span></div></div><div className="welcome-art"><div className="art-glow" /><div className="art-orb"><span>W</span></div><div className="art-card art-card-one"><strong>WorkSpot AI</strong><span>{p.copy.ui?.listeningInLanguage ?? "Listening in your language"}</span></div><div className="art-card art-card-two"><span className="mini-score">82</span><div><strong>{p.copy.ui?.workProgressScore ?? "Work & Progress Score"}</strong><small>{p.copy.ui?.updatedWithProgress ?? "Updated with your progress"}</small></div></div></div></div><section id="learn-more" className="learn-strip"><div><span className="eyebrow">{p.copy.ui?.simpleConversation ?? "A SIMPLE CONVERSATION"}</span><h2>{p.copy.ui?.workStartingPoint ?? "Your work is the starting point."}</h2></div><p>{p.copy.ui?.workDescription ?? "WorkSpot listens, understands your experience, and helps you take the next useful step—whether that is better training, a nearby job, or support to grow your own work."}</p></section></div>;
@@ -312,7 +312,41 @@ function Onboarding(p: any) { if (p.screen === "welcome") return <div className=
 }
 
 function LanguageMenu({ language, setLanguage, onClose }: { language: string; setLanguage: (value: string) => void; onClose: () => void }) { const [query, setQuery] = useState(""); const selected = getLanguageConfig(language); const filtered = supportedLanguages.filter((item) => `${item.name} ${item.nativeName}`.toLowerCase().includes(query.toLowerCase())); return <div className="language-popover" role="dialog" aria-label="Choose your language"><div className="popover-heading"><div><span className="eyebrow">LANGUAGE</span><strong>Choose your language</strong></div><button aria-label="Close language selector" onClick={onClose}>×</button></div><input className="language-search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search language..." /> <div className="language-list" role="listbox">{filtered.map((item) => <button role="option" aria-selected={item.name === selected.name} className={item.name === selected.name ? "language-row selected" : "language-row"} key={item.code} onClick={() => { setLanguage(item.name); onClose(); }}><span><strong>{item.nativeName}</strong><small>{item.name}</small></span><span>{item.name === selected.name ? "✓" : ""}</span></button>)}</div></div>; }
-function LanguageSelector({ language, setLanguage }: { language: string; setLanguage: (value: string) => void }) { const [open, setOpen] = useState(false); const selected = getLanguageConfig(language); useEffect(() => { const close = (event: MouseEvent | KeyboardEvent) => { const outside = event instanceof MouseEvent && !(event.target as Element).closest(".language-selector"); const escape = event instanceof KeyboardEvent && event.key === "Escape"; if (outside || escape) setOpen(false); }; document.addEventListener("mousedown", close); document.addEventListener("keydown", close); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); }; }, []); return <div className="header-popover-wrap language-selector"><button className="header-language" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{selected.nativeName}⌄</button>{open && <LanguageMenu language={language} setLanguage={setLanguage} onClose={() => setOpen(false)} />}</div>; }
+function LanguageSelector({ language, setLanguage }: { language: string; setLanguage: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = getLanguageConfig(language);
+  useEffect(() => {
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      const outside = event instanceof MouseEvent && !(event.target as Element).closest(".language-selector");
+      const escape = event instanceof KeyboardEvent && event.key === "Escape";
+      if (outside || escape) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+  return (
+    <div className="header-popover-wrap language-selector">
+      <button
+        type="button"
+        className={`header-language${open ? " active" : ""}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Select language. Current language: ${selected.name}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="header-language-text">{selected.nativeName}</span>
+        <svg className="header-language-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && <LanguageMenu language={language} setLanguage={setLanguage} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
 
 function ProfileMenu({ goTo, onClose, onLogout }: { goTo: (target: Screen) => void; onClose: () => void; onLogout: () => void }) { useEffect(() => { const close = (event: MouseEvent | KeyboardEvent) => { const outside = event instanceof MouseEvent && !(event.target as Element).closest(".header-popover-wrap"); const escape = event instanceof KeyboardEvent && event.key === "Escape"; if (outside || escape) onClose(); }; document.addEventListener("mousedown", close); document.addEventListener("keydown", close); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); }; }, [onClose]); return <div className="profile-popover" role="menu"><div className="profile-popover-head"><span className="avatar">AD</span><div><strong>Anita Das</strong><small>Bamboo Craft Worker</small></div></div><button role="menuitem" onClick={() => { goTo("profile"); onClose(); }}>My Profile <span>→</span></button><button role="menuitem" onClick={onClose}>Settings <span>→</span></button><button role="menuitem" onClick={() => { goTo("help"); onClose(); }}>Help <span>→</span></button><button className="profile-logout" role="menuitem" onClick={() => { onLogout(); onClose(); }}>Logout <span>↗</span></button></div>; }
 
@@ -348,7 +382,17 @@ function AppFrame(p: any) {
       {p.screen === "home" && <HomePage {...p} />}
       {!(["profile", "opportunities", "opportunityDetail", "advisor", "progress", "notifications", "help", "home"] as string[]).includes(p.screen) && <HomePage {...p} />}
     </main>
-    <nav className="mobile-nav"><button onClick={() => p.goTo("home" as Screen)}><span>⌂</span>{c.nav[0]}</button><button onClick={() => p.goTo("opportunities")}><span>▣</span>{c.nav[2]}</button><button onClick={() => p.goTo("advisor")}><span>✦</span>{c.nav[3]}</button><button onClick={() => p.goTo("progress")}><span>↗</span>{c.nav[4]}</button></nav>
+    {(() => {
+      const mobileNavIndex = p.screen === "home" ? 0 : (p.screen === "opportunities" || p.screen === "opportunityDetail") ? 1 : p.screen === "advisor" ? 2 : -1;
+      return (
+        <nav className="mobile-nav" aria-label="Mobile Navigation" style={{ "--active-index": mobileNavIndex } as React.CSSProperties}>
+          <div className="mobile-nav-indicator" aria-hidden="true" />
+          <button className={mobileNavIndex === 0 ? "active" : ""} aria-current={mobileNavIndex === 0 ? "page" : undefined} onClick={() => p.goTo("home" as Screen)}><span className="nav-icon">⌂</span><span className="nav-label">{c.nav[0]}</span></button>
+          <button className={mobileNavIndex === 1 ? "active" : ""} aria-current={mobileNavIndex === 1 ? "page" : undefined} onClick={() => p.goTo("opportunities")}><span className="nav-icon">▣</span><span className="nav-label">{c.nav[2]}</span></button>
+          <button className={mobileNavIndex === 2 ? "active" : ""} aria-current={mobileNavIndex === 2 ? "page" : undefined} onClick={() => p.goTo("advisor")}><span className="nav-icon">✦</span><span className="nav-label">{c.nav[3]}</span></button>
+        </nav>
+      );
+    })()}
   </div>;
 }
 
