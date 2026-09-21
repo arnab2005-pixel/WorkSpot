@@ -5,7 +5,7 @@ WORKDIR /app
 
 # Install frontend dependencies
 COPY apps/web/package*.json ./apps/web/
-RUN cd apps/web && npm ci
+RUN cd apps/web && npm install
 
 # Build frontend
 COPY apps/web ./apps/web
