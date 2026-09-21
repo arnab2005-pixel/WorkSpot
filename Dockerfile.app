@@ -3,13 +3,22 @@ FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app
 
-# Install frontend dependencies
-COPY apps/web/package*.json ./apps/web/
-RUN cd apps/web && npm install
+# Install pnpm
+RUN npm install -g pnpm@9.15.0
 
-# Build frontend
+# Copy workspace configurations and shared packages
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.json ./
+COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
-RUN cd apps/web && npm run build
+COPY apps/server/package.json ./apps/server/
+
+# Accept build-time VITE_API_URL from Render
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
+
+# Install dependencies and build frontend
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @workspot/web build
 
 # ---- Python runtime ----
 FROM python:3.11-slim
