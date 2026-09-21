@@ -24,4 +24,7 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    allowedHosts: ["workspot-web.onrender.com"],
+  },
 });
