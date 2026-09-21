@@ -392,7 +392,8 @@ async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
         await db.nsqf_courses.delete_many({})
         await db.nsqf_courses.insert_many(courses)
         # Create indexes
-        await db.nsqf_courses.create_index([("qp_code", ASCENDING)], unique=True)
+        await db.nsqf_courses.create_index([("qp_code", ASCENDING), ("training_center_id", ASCENDING)], unique=True)
+        await db.nsqf_courses.create_index([("qp_code", ASCENDING)])
         await db.nsqf_courses.create_index([("district_availability", ASCENDING)])
         await db.nsqf_courses.create_index([("sector", ASCENDING)])
         await db.nsqf_courses.create_index([("status", ASCENDING)])

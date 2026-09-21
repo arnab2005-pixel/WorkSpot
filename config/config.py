@@ -32,12 +32,12 @@ class Settings(BaseSettings):
     workers: int = 1
 
     # Redis (session cache)
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = "redis://127.0.0.1:6379"
     redis_max_connections: int = 50
     session_ttl_seconds: int = 1800  # 30 minutes
 
     # MongoDB
-    mongodb_url: str = "mongodb://localhost:27017"
+    mongodb_url: str = "mongodb://127.0.0.1:27017"
     mongodb_database: str = "pm_ajay"
     mongodb_max_pool_size: int = 50
 
