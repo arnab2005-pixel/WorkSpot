@@ -189,3 +189,26 @@ async def test_audio_interact_upload():
         assert "spoken_response_indic" in data
         assert "profile" in data
         assert "options" in data
+
+
+@pytest.mark.asyncio
+async def test_gemini_api_fallback(monkeypatch):
+    """Test that VLLMClient attempts Gemini API fallback when configured."""
+    from services.llm.vllm_client import VLLMClient
+    from config.config import get_settings
+
+    client = VLLMClient(base_url="http://invalid-vllm-host-9999.local/v1")
+    
+    # Mock _call_gemini_api to verify it's reached when vLLM fails
+    called = False
+    async def mock_gemini(system_prompt, user_prompt):
+        nonlocal called
+        called = True
+        return '{"detected_trade": "सिलाई", "prior_experience_years": 2.0, "mobility_radius_km": 15, "employment_intent": "SELF_EMPLOYMENT", "missing_slot": "ENTERPRISE", "spoken_response_indic": "Gemini fallback active"}'
+
+    monkeypatch.setattr(client, "_call_gemini_api", mock_gemini)
+
+    res = await client.extract_slots("हम सिलाई सीखल चाहत बानी", "VOCATIONAL_DISCOVERY")
+    assert called is True
+    assert res.detected_trade == "सिलाई"
+    assert res.employment_intent == "SELF_EMPLOYMENT"

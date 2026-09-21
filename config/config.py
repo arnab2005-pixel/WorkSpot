@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     vllm_timeout_seconds: float = 10.0
     vllm_max_retries: int = 2
 
+    # Gemini API Fallback (when local vLLM is offline)
+    gemini_api_key: Optional[str] = Field(default=None, validation_alias="GEMINI_API_KEY")
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_timeout_seconds: float = 10.0
+
     # TTS (indic-tts FastPitch + HiFi-GAN)
     tts_base_url: str = "http://localhost:8001"
     tts_timeout_seconds: float = 8.0

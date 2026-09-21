@@ -276,5 +276,25 @@ RULES:
                 data = resp.json()
                 return data["choices"][0]["message"]["content"].strip()
     except Exception:
-        pass
+        # Fallback to Gemini API if GEMINI_API_KEY is configured
+        from config.config import get_settings
+        import os
+        cfg = get_settings()
+        api_key = cfg.gemini_api_key or os.environ.get("GEMINI_API_KEY")
+        if api_key:
+            try:
+                model = cfg.gemini_model or "gemini-2.5-flash"
+                g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+                payload = {
+                    "system_instruction": {"parts": [{"text": system_prompt}]},
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.2, "maxOutputTokens": 80},
+                }
+                async with httpx.AsyncClient(timeout=timeout_s) as client:
+                    g_resp = await client.post(g_url, json=payload)
+                    if g_resp.status_code == 200:
+                        g_data = g_resp.json()
+                        return g_data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            except Exception as g_exc:
+                logger.warning("Gemini API question generation fallback failed: %s", g_exc)
     return None

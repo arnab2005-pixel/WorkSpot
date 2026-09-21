@@ -7,6 +7,7 @@ Includes rule-based fallback when vLLM is offline or during testing.
 
 import json
 import logging
+import os
 import re
 import time
 from typing import Optional, Dict, Any
@@ -35,6 +36,7 @@ settings = get_settings()
 class VLLMClient:
     """
     Client for vLLM server serving Qwen2.5-3B-Instruct with structured JSON schema decoding.
+    Supports Gemini API fallback when local vLLM is offline/unreachable.
     """
 
     def __init__(
@@ -48,6 +50,45 @@ class VLLMClient:
         self.timeout = timeout or settings.vllm_timeout_seconds
         self.schema_json = ExtractedSlots.model_json_schema()
 
+    async def _call_gemini_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+        """
+        Call Gemini API fallback when local vLLM is unreachable.
+        Uses GEMINI_API_KEY environment variable or settings.
+        """
+        api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            return None
+
+        model = settings.gemini_model or "gemini-2.5-flash"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": user_prompt}]
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.1,
+                "responseMimeType": "application/json",
+            }
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=settings.gemini_timeout_seconds) as client:
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return text
+        except Exception as exc:
+            logger.warning("Gemini API fallback call failed: %s", exc)
+            return None
+
     async def extract_slots(
         self,
         user_transcript: str,
@@ -58,7 +99,7 @@ class VLLMClient:
         Extract conversational slots and produce dialect-friendly next response.
         
         Uses vLLM /v1/chat/completions with json_schema constraint.
-        Falls back to rule-based extractor if vLLM is unreachable.
+        Falls back to Gemini API (if GEMINI_API_KEY is present) or rule-based extractor if unreachable.
         """
         known_slots = known_slots or {}
         user_prompt = SLOT_EXTRACTION_PROMPT.format(
@@ -107,9 +148,19 @@ class VLLMClient:
             ValidationError,
         ) as exc:
             logger.warning(
-                "vLLM server call failed (%s). Falling back to local slot extractor.",
+                "vLLM server call failed (%s). Trying Gemini API fallback...",
                 exc,
             )
+            gemini_text = await self._call_gemini_api(SYSTEM_PROMPT_PM_AJAY, user_prompt)
+            if gemini_text:
+                try:
+                    parsed_json = json.loads(gemini_text)
+                    logger.info("Successfully extracted slots via Gemini API fallback")
+                    return ExtractedSlots.model_validate(parsed_json)
+                except Exception as g_err:
+                    logger.warning("Failed to parse Gemini API JSON response: %s", g_err)
+
+            logger.warning("Falling back to local slot extractor.")
             return self._fallback_extract(user_transcript, current_state, known_slots)
 
     def _fallback_extract(
