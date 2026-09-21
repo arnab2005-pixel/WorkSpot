@@ -588,9 +588,13 @@ async def audio_transcribe(
         }
     except HTTPException:
         raise
-    except Exception as exc:
-        logger.error("Error during audio transcription: %s", exc)
-        return {"transcript": "नमस्ते", "language": language or "hi", "error": str(exc)}
+    except Exception:
+        logger.exception("Error during audio transcription")
+        return {
+            "transcript": "नमस्ते",
+            "language": language or "hi",
+            "error": "Audio transcription failed. Please try again.",
+        }
 
 
 class AudioInteractRequest(BaseModel):
