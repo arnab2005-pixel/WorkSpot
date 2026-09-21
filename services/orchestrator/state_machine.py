@@ -223,6 +223,7 @@ class ConversationFSM:
                     "खोलना",
                     "बिजनेस",
                     "दोकान",
+                    "आपन काम",
                 ]
             )
             if is_biz:
@@ -231,26 +232,6 @@ class ConversationFSM:
                 session.extracted_entities["employment_intent"] = "SELF_EMPLOYMENT"
                 session.slots["INTENT"].status = SlotStatus.FILLED
                 session.slots["INTENT"].value = "SELF_EMPLOYMENT"
-                intake = await self.llm_client.extract_enterprise_intake(
-                    user_transcript, "ENTERPRISE_SCOPING"
-                )
-
-            # Check if beneficiary explicitly mentions enterprise/shop/business
-            is_biz = any(
-                w in user_transcript.lower()
-                for w in [
-                    "दुकान",
-                    "खुद का",
-                    "मशीन",
-                    "स्वरोज़गार",
-                    "खोलना",
-                    "बिजनेस",
-                    "लेईला",
-                    "खरीदे",
-                ]
-            )
-            if is_biz:
-                next_state = FSMState.ENTERPRISE_SCOPING
                 intake = await self.llm_client.extract_enterprise_intake(
                     user_transcript, "ENTERPRISE_SCOPING"
                 )
@@ -263,10 +244,6 @@ class ConversationFSM:
                         await self.mongo_service.process_enterprise_routing(
                             session.phone_hash, ent_data
                         )
-                        await self.mongo_service.process_enterprise_routing(
-                            session.phone_hash, ent_data
-                        )
-                next_prompt = intake.conversational_response.spoken_text_indic
             else:
                 next_state = FSMState.MOBILITY_AND_INTENT
 
@@ -284,10 +261,6 @@ class ConversationFSM:
             intake = await self.llm_client.extract_enterprise_intake(
                 user_transcript, "ENTERPRISE_SCOPING"
             )
-        elif current_state == FSMState.ENTERPRISE_SCOPING:
-            intake = await self.llm_client.extract_enterprise_intake(
-                user_transcript, "ENTERPRISE_SCOPING"
-            )
             if intake.profile_slots.enterprise_details:
                 ent_data = intake.profile_slots.enterprise_details
                 session.extracted_entities["enterprise_details"] = ent_data.model_dump()
@@ -296,18 +269,13 @@ class ConversationFSM:
                         session.phone_hash, ent_data
                     )
 
-            # Move to mobility/training format or directly to recommendations if mobility is already known
             if (
-                session.slots.get("MOBILITY")
-                and session.slots["MOBILITY"].status == SlotStatus.FILLED
+                chained.mobility_km is not None
+                or (session.slots.get("MOBILITY") and session.slots["MOBILITY"].status == SlotStatus.FILLED)
             ):
                 next_state = FSMState.RECOMMENDATION_DELIVERY
             else:
-                next_state = FSMState.TRAINING_FORMAT
-            next_state = FSMState.MOBILITY_AND_INTENT
-            next_prompt = (
-                "प्रशिक्षण और बाज़ार आने-जाने के लिए आप रोज़ कितनी दूर (किलोमीटर) तक जा सकते हैं?"
-            )
+                next_state = FSMState.MOBILITY_AND_INTENT
 
         # ==========================================
         # Node 4: MOBILITY_AND_INTENT / TRAINING_FORMAT
@@ -319,13 +287,13 @@ class ConversationFSM:
             )
             if any(
                 w in raw_t
-                for w in ["दुकान", "दोकान", "खुद का", "स्वरोज़गार", "बिजनेस", "आपन काम"]
+                for w in ["दुकान", "दोकान", "खुद का", "स्वरोज़गार", "बिजनेस", "आपन काम", "अपना"]
             ):
                 intent = "SELF_EMPLOYMENT"
-            elif any(w in raw_t for w in ["फैक्ट्री", "नौकरी", "मजदूरी"]):
+            elif any(w in raw_t for w in ["फैक्ट्री", "नौकरी", "मजदूरी", "काम करना", "wage", "job"]):
                 intent = "WAGE_EMPLOYMENT"
-            elif not intent:
-                intent = "SELF_EMPLOYMENT"
+            elif not intent or intent == "WAGE":
+                intent = "WAGE_EMPLOYMENT" if "नौकरी" in raw_t or "फैक्ट्री" in raw_t else "SELF_EMPLOYMENT"
 
             chained.employment_intent = intent
             session.extracted_entities["employment_intent"] = intent
@@ -333,14 +301,13 @@ class ConversationFSM:
             session.slots["INTENT"].value = intent
 
             # Mobility radius
-            mobility = extracted.mobility_radius_km
             if any(
-                w in raw_t for w in ["घर", "गाँव में ही", "बाहर नहीं", "0 किमी", "0 km"]
+                w in raw_t for w in ["घर", "गाँव में ही", "बाहर नहीं", "नहीं जा सकते", "0 किमी", "0 km", "0km"]
             ):
                 mobility = 0
-            elif mobility is None:
+            else:
                 km_m = re.search(r"(\d+)\s*(किमी|km|किलोमीटर)", raw_t)
-                mobility = int(km_m.group(1)) if km_m else 15
+                mobility = int(km_m.group(1)) if km_m else (extracted.mobility_radius_km or session.extracted_entities.get("mobility_radius_km", 15))
 
             chained.mobility_km = mobility
             session.extracted_entities["mobility_radius_km"] = mobility
@@ -351,20 +318,6 @@ class ConversationFSM:
             slot_val = f"{intent} ({mobility}km)"
 
             # If user mentions self-employment, extract enterprise details for GIA routing
-            if (
-                intent == "SELF_EMPLOYMENT"
-                and "enterprise_details" not in session.extracted_entities
-            ):
-                intake = await self.llm_client.extract_enterprise_intake(
-                    user_transcript, "ENTERPRISE_SCOPING"
-                )
-        elif current_state == FSMState.MOBILITY_AND_INTENT:
-            intent = extracted.employment_intent or session.extracted_entities.get(
-                "employment_intent", "SELF_EMPLOYMENT"
-            )
-            mobility = extracted.mobility_radius_km or 15
-
-            # If user mentions self-employment here without prior enterprise scoping, extract enterprise goals
             if (
                 intent in ("SELF_EMPLOYMENT", "HYBRID")
                 and "enterprise_details" not in session.extracted_entities
@@ -384,12 +337,12 @@ class ConversationFSM:
 
             # Check for contradiction: WAGE + 0 km
             if (
-                intent == "WAGE_EMPLOYMENT"
+                intent in ("WAGE_EMPLOYMENT", "WAGE")
                 and mobility == 0
                 and current_state != FSMState.CONTEXTUAL_REPAIR
             ):
                 next_state = FSMState.CONTEXTUAL_REPAIR
-            elif intent == "SELF_EMPLOYMENT" and not chained.capital_needed:
+            elif intent in ("SELF_EMPLOYMENT", "HYBRID") and not chained.capital_needed:
                 next_state = FSMState.ENTERPRISE_CAPITAL
             else:
                 next_state = FSMState.RECOMMENDATION_DELIVERY
@@ -428,8 +381,9 @@ class ConversationFSM:
             )
             query_embedding = self.embedder.embed_text(trade_query)
 
+            intent_val = session.extracted_entities.get("employment_intent") or chained.employment_intent
             is_enterprise = (
-                intent in ("SELF_EMPLOYMENT", "HYBRID")
+                intent_val in ("SELF_EMPLOYMENT", "HYBRID")
                 or "enterprise_details" in session.extracted_entities
             )
             has_exp = (
@@ -481,10 +435,10 @@ class ConversationFSM:
                 )
                 next_prompt = f"आपके पास के ब्लॉक में {top_name} और संबंधित कौशल के दो प्रशिक्षण केंद्र हैं। क्या आप दाखिले की जानकारी चाहते हैं?"
 
-        spoken_question = next_prompt
-        _, dynamic_options = synthesize_context_chained_turn(
+        synth_question, dynamic_options = synthesize_context_chained_turn(
             chained, next_state, user_transcript
         )
+        spoken_question = synth_question if next_state not in (FSMState.RECOMMENDATION_DELIVERY, FSMState.COMPLETED) else (next_prompt or synth_question)
         chained.active_conversational_hook = spoken_question
         chained.options = dynamic_options
 
