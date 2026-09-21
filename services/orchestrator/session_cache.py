@@ -7,8 +7,8 @@ and graceful in-memory fallback when Redis is unavailable.
 import logging
 
 import redis.asyncio as aioredis
-from redis.exceptions import RedisError
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 
 from config.config import get_settings
 from schemas.session import SessionData
@@ -49,8 +49,7 @@ class SessionCache:
             logger.info(f"Connected to Redis session cache at {self.redis_url}")
         except RedisError as exc:
             logger.warning(
-                "Redis connection failed: %s. "
-                "Falling back to in-memory session cache.",
+                "Redis connection failed: %s. Falling back to in-memory session cache.",
                 exc,
             )
             self._connected = False

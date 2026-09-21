@@ -5,7 +5,7 @@ Provides async MongoDB connectivity, Atlas Vector Search, indexing,
 and repository pattern data access layer.
 """
 
-from .mongo_client import get_mongo_client, MongoDBClient
 from .indexes import ensure_indexes
+from .mongo_client import MongoDBClient, get_mongo_client
 
-__all__ = ["get_mongo_client", "MongoDBClient", "ensure_indexes"]
+__all__ = ["MongoDBClient", "ensure_indexes", "get_mongo_client"]

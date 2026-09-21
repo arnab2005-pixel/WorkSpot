@@ -6,14 +6,17 @@ Next Turn = [Empathetic Acknowledgement] + [Entity Hook / Bridge] + [Target Inqu
 and generates contextual interactive MCQ options for touch or voice input.
 """
 
-import re
 import logging
-from typing import Optional, Tuple, List
+import os
+import re
+
 import httpx
 
+from config.config import get_settings
 from schemas.session import DynamicChainedState, FSMState
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
 FALLBACK_REPROMPT = (
     "माफ़ कीजियेगा, आवाज़ साफ़ नहीं आई। कृपया अपनी बात दोबारा कहें ताकि हम सही योजना ढूंढ सकें।"
@@ -24,7 +27,7 @@ def synthesize_context_chained_turn(
     state: DynamicChainedState,
     target_state: FSMState,
     user_transcript: str,
-) -> Tuple[str, List[str]]:
+) -> tuple[str, list[str]]:
     """
     Synthesizes Turn N+1 dynamically using the three-part conversational structure:
     Next Turn = [Empathetic Acknowledgement] + [Entity Hook / Bridge] + [Target Inquiry]
@@ -36,7 +39,11 @@ def synthesize_context_chained_turn(
     # 0. Contextual Contradiction Repair
     # -------------------------------------------------------------
     # Scenario: Caller initially states wage/factory intent, but mobility is 0 km (home-bound)
-    if (state.employment_intent == "WAGE_EMPLOYMENT" or "फैक्ट्री" in raw_lower or "नौकरी" in raw_lower) and state.mobility_km == 0:
+    if (
+        state.employment_intent == "WAGE_EMPLOYMENT"
+        or "फैक्ट्री" in raw_lower
+        or "नौकरी" in raw_lower
+    ) and state.mobility_km == 0:
         question = (
             "आपने पहले फैक्ट्री में नौकरी की बात कही थी, लेकिन आप गाँव से बाहर नहीं जा सकते। "
             "क्या आप गाँव के अंदर ही खुद की छोटी सिलाई की दुकान शुरू करना पसंद करेंगे?"
@@ -107,12 +114,24 @@ def synthesize_context_chained_turn(
     # -------------------------------------------------------------
     # 3. VOCATIONAL_DISCOVERY -> INTENT / EXPERIENCE / CAPITAL
     # -------------------------------------------------------------
-    if target_state in (FSMState.MOBILITY_AND_INTENT, FSMState.EXPERIENCE_DEPTH, FSMState.ASPIRATIONAL_PROBE):
+    if target_state in (
+        FSMState.MOBILITY_AND_INTENT,
+        FSMState.EXPERIENCE_DEPTH,
+        FSMState.ASPIRATIONAL_PROBE,
+    ):
         trade = (state.trade or "").lower()
-        has_years = "साल" in user_transcript or "वर्ष" in user_transcript or "year" in raw_lower
-        is_tailoring = any(w in trade or w in raw_lower for w in ["सिलाई", "दर्जी", "tailor", "कपड़ा", "गारमेंट"])
-        is_masonry = any(w in trade or w in raw_lower for w in ["राजमिस्त्री", "मिस्त्री", "mason", "निर्माण", "ईंट", "जोड़ाई"])
-        is_unskilled = any(w in trade or w in raw_lower for w in ["मजदूरी", "दैनिक", "unskilled", "कुछ नहीं", "खेतिहर"])
+        is_tailoring = any(
+            w in trade or w in raw_lower
+            for w in ["सिलाई", "दर्जी", "tailor", "कपड़ा", "गारमेंट"]
+        )
+        is_masonry = any(
+            w in trade or w in raw_lower
+            for w in ["राजमिस्त्री", "मिस्त्री", "mason", "निर्माण", "ईंट", "जोड़ाई"]
+        )
+        is_unskilled = any(
+            w in trade or w in raw_lower
+            for w in ["मजदूरी", "दैनिक", "unskilled", "कुछ नहीं", "खेतिहर"]
+        )
 
         if is_masonry:
             ack = "राजमिस्त्री का काम बहुत हुनर और मेहनत का काम है!"
@@ -233,7 +252,7 @@ async def generate_conditioned_question_llm(
     state: DynamicChainedState,
     llm_url: str = "http://127.0.0.1:8000/v1/chat/completions",
     timeout_s: float = 1.5,
-) -> Optional[str]:
+) -> str | None:
     """
     Optional dynamic LLM call to Qwen/vLLM injecting prior trajectory context.
     Falls back gracefully if vLLM is offline.
@@ -244,11 +263,11 @@ You are the PM-AJAY conversational voice intake assistant speaking in natural, r
 You are formulating the NEXT question.
 
 CONTEXT OF PREVIOUS TURNS:
-- Location: {state.district or 'Not stated'}, Block: {state.block or 'Not stated'}
-- Trade: {state.trade or 'Not stated'} (Experience: {state.prior_experience or 'None'})
-- Intent: {state.employment_intent or 'Not stated'}
-- Last Spoken by Beneficiary: "{last_turn.user_raw_transcript if last_turn else 'Call Started'}"
-- Last Extracted Data: {last_turn.extracted_slot_key if last_turn else 'None'} = {last_turn.extracted_slot_value if last_turn else 'None'}
+- Location: {state.district or "Not stated"}, Block: {state.block or "Not stated"}
+- Trade: {state.trade or "Not stated"} (Experience: {state.prior_experience or "None"})
+- Intent: {state.employment_intent or "Not stated"}
+- Last Spoken by Beneficiary: "{last_turn.user_raw_transcript if last_turn else "Call Started"}"
+- Last Extracted Data: {last_turn.extracted_slot_key if last_turn else "None"} = {last_turn.extracted_slot_value if last_turn else "None"}
 
 RULES:
 1. First sentence MUST acknowledge or praise what the user just said (e.g., mention their trade or location).
@@ -275,10 +294,18 @@ RULES:
             if resp.status_code == 200:
                 data = resp.json()
                 return data["choices"][0]["message"]["content"].strip()
-    except Exception:
+    except (
+        httpx.HTTPError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as exc:
+        logger.warning(
+            "vLLM server call failed (%s). Trying Gemini API fallback...",
+            exc,
+        )
         # Fallback to Gemini API if GEMINI_API_KEY is configured
-        from config.config import get_settings
-        import os
         cfg = get_settings()
         api_key = cfg.gemini_api_key or os.environ.get("GEMINI_API_KEY")
         if api_key:
@@ -294,7 +321,11 @@ RULES:
                     g_resp = await client.post(g_url, json=payload)
                     if g_resp.status_code == 200:
                         g_data = g_resp.json()
-                        return g_data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except Exception as g_exc:
-                logger.warning("Gemini API question generation fallback failed: %s", g_exc)
+                        return g_data["candidates"][0]["content"]["parts"][0][
+                            "text"
+                        ].strip()
+            except Exception as g_exc:  # noqa: BLE001 - provider fallback must handle runtime failures
+                logger.warning(
+                    "Gemini API question generation fallback failed: %s", g_exc
+                )
     return None

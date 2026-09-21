@@ -7,9 +7,10 @@ health monitoring, and graceful resource teardown.
 
 import logging
 import time
-from typing import Optional, Dict, Any
+from typing import Any
+
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from pymongo.errors import ConnectionFailure, PyMongoError, ServerSelectionTimeoutError
 
 from config.config import get_settings
 
@@ -24,24 +25,24 @@ class MongoDBClient:
 
     def __init__(
         self,
-        mongo_url: Optional[str] = None,
-        database_name: Optional[str] = None,
-        max_pool_size: Optional[int] = None,
+        mongo_url: str | None = None,
+        database_name: str | None = None,
+        max_pool_size: int | None = None,
     ):
         self.mongo_url = mongo_url or settings.mongodb_url
         self.database_name = database_name or settings.mongodb_database
         self.max_pool_size = max_pool_size or settings.mongodb_max_pool_size
-        self._client: Optional[AsyncIOMotorClient] = None
-        self._db: Optional[AsyncIOMotorDatabase] = None
+        self._client: AsyncIOMotorClient | None = None
+        self._db: AsyncIOMotorDatabase | None = None
         self._connected: bool = False
-        self._is_atlas_search_supported: Optional[bool] = None
+        self._is_atlas_search_supported: bool | None = None
 
     @property
-    def client(self) -> Optional[AsyncIOMotorClient]:
+    def client(self) -> AsyncIOMotorClient | None:
         return self._client
 
     @property
-    def db(self) -> Optional[AsyncIOMotorDatabase]:
+    def db(self) -> AsyncIOMotorDatabase | None:
         return self._db
 
     @property
@@ -64,12 +65,12 @@ class MongoDBClient:
                 socketTimeoutMS=5000,
             )
             self._db = self._client[self.database_name]
-            
+
             # Verify connectivity via ping command
             start_ping = time.perf_counter()
             await self._client.admin.command("ping")
             ping_ms = (time.perf_counter() - start_ping) * 1000.0
-            
+
             self._connected = True
             logger.info(
                 f"Connected to MongoDB at {self.mongo_url}/{self.database_name} "
@@ -83,12 +84,12 @@ class MongoDBClient:
             )
             self._connected = False
             return False
-        except Exception as exc:
-            logger.exception("Unexpected MongoDB connection error: %s", exc)
+        except Exception:
+            logger.exception("Unexpected MongoDB connection error")
             self._connected = False
             return False
 
-    async def ping(self) -> Dict[str, Any]:
+    async def ping(self) -> dict[str, Any]:
         """
         Healthcheck probe returning connectivity status and round-trip latency.
         """
@@ -184,7 +185,7 @@ class MongoDBClient:
         return self._db.dpiu_applications if self._db is not None else None
 
 
-_mongo_client_instance: Optional[MongoDBClient] = None
+_mongo_client_instance: MongoDBClient | None = None
 
 
 def get_mongo_client() -> MongoDBClient:

@@ -5,6 +5,7 @@ All settings loaded from environment variables with sensible defaults.
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -47,7 +48,7 @@ class Settings(BaseSettings):
     vllm_max_retries: int = 2
 
     # Gemini API Fallback (when local vLLM is offline)
-    gemini_api_key: Optional[str] = Field(default=None, validation_alias="GEMINI_API_KEY")
+    gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
     gemini_model: str = "gemini-2.5-flash"
     gemini_timeout_seconds: float = 10.0
 

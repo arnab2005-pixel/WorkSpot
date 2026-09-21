@@ -4,7 +4,9 @@ DPIU repository managing pre-filled PM-AJAY capital subsidy applications and sch
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any
+
+from pydantic import ValidationError
 from pymongo.errors import PyMongoError
 
 from schemas.dpiu_application import DpiuApplicationRecord
@@ -40,7 +42,9 @@ class DpiuRepository(BaseRepository):
             logger.error(f"Failed to create DPIU application {app.application_id}: {e}")
             return False
 
-    async def get_application(self, application_id: str) -> Optional[DpiuApplicationRecord]:
+    async def get_application(
+        self, application_id: str
+    ) -> DpiuApplicationRecord | None:
         """Retrieve DPIU application by ID."""
         if not await self.ensure_connected() or self.collection is None:
             return None
@@ -49,28 +53,36 @@ class DpiuRepository(BaseRepository):
             if doc:
                 return DpiuApplicationRecord.model_validate(doc)
             return None
-        except Exception as e:
-            logger.error(f"Failed to get DPIU application {application_id}: {e}")
+        except ValidationError:
+            logger.exception("Invalid DPIU application document for %s", application_id)
+            return None
+        except PyMongoError:
+            logger.exception("Failed to get DPIU application %s", application_id)
             return None
 
     async def list_by_district(
         self,
         district_code: str,
-        status: Optional[str] = None,
+        status: str | None = None,
         limit: int = 50,
-    ) -> List[DpiuApplicationRecord]:
+    ) -> list[DpiuApplicationRecord]:
         """List applications by district and optional status filter."""
         if not await self.ensure_connected() or self.collection is None:
             return []
-        query: Dict[str, Any] = {"district_code": district_code}
+        query: dict[str, Any] = {"district_code": district_code}
         if status:
             query["status"] = status
         try:
             cursor = self.collection.find(query).sort("created_at", -1).limit(limit)
             docs = await cursor.to_list(length=limit)
             return [DpiuApplicationRecord.model_validate(d) for d in docs]
-        except Exception as e:
-            logger.error(f"Failed to list DPIU applications for {district_code}: {e}")
+        except ValidationError:
+            logger.exception(
+                "Invalid DPIU application document in district %s", district_code
+            )
+            return []
+        except PyMongoError:
+            logger.exception("Failed to list DPIU applications for %s", district_code)
             return []
 
     async def update_status(self, application_id: str, new_status: str) -> bool:

@@ -11,7 +11,8 @@ Tests:
 """
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
+
 from api.server import app
 
 
@@ -22,7 +23,7 @@ async def test_client_session_lifecycle():
         # 1. Create Session
         resp = await client.post(
             "/api/v1/session",
-            json={"language": "Bhojpuri", "phone_number": "+919876543210"}
+            json={"language": "Bhojpuri", "phone_number": "+919876543210"},
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -51,14 +52,17 @@ async def test_client_interact_and_enterprise_scoping():
         # Start session
         sess_resp = await client.post(
             "/api/v1/session",
-            json={"language": "Hindi", "phone_number": "+919876543210"}
+            json={"language": "Hindi", "phone_number": "+919876543210"},
         )
         session_id = sess_resp.json()["session_id"]
 
         # Step 1: Consent
         step1 = await client.post(
             "/api/v1/interact",
-            json={"session_id": session_id, "user_transcript": "हाँ, मैं सहमत हूँ और बात करना चाहता हूँ"}
+            json={
+                "session_id": session_id,
+                "user_transcript": "हाँ, मैं सहमत हूँ और बात करना चाहता हूँ",
+            },
         )
         assert step1.status_code == 200
         assert step1.json()["current_state"] in ("GEOGRAPHIC_INTAKE", "INIT_CONSENT")
@@ -66,7 +70,7 @@ async def test_client_interact_and_enterprise_scoping():
         # Step 2: Location
         step2 = await client.post(
             "/api/v1/interact",
-            json={"session_id": session_id, "user_transcript": "हम वाराणसी जिले से बानी"}
+            json={"session_id": session_id, "user_transcript": "हम वाराणसी जिले से बानी"},
         )
         assert step2.status_code == 200
 
@@ -75,8 +79,8 @@ async def test_client_interact_and_enterprise_scoping():
             "/api/v1/interact",
             json={
                 "session_id": session_id,
-                "user_transcript": "हमार नाम राम लखन बा, हम सिलाई मशीन के दुकान खोलल चाहत बानी, 40000 के पूंजी चाही"
-            }
+                "user_transcript": "हमार नाम राम लखन बा, हम सिलाई मशीन के दुकान खोलल चाहत बानी, 40000 के पूंजी चाही",
+            },
         )
         assert step3.status_code == 200
         data3 = step3.json()
@@ -109,8 +113,8 @@ async def test_client_recommendations_and_advisor():
             json={
                 "session_id": session_id,
                 "message": "मुझे ₹50,000 की सब्सिडी कैसे मिलेगी?",
-                "language": "Hindi"
-            }
+                "language": "Hindi",
+            },
         )
         assert adv_resp.status_code == 200
         adv_data = adv_resp.json()
@@ -123,6 +127,7 @@ async def test_audio_transcribe_upload():
     """Test the /audio/transcribe endpoint with a synthetic WAV file."""
     import io
     import wave
+
     import numpy as np
 
     transport = ASGITransport(app=app)
@@ -154,6 +159,7 @@ async def test_audio_interact_upload():
     """Test the combined /audio/interact endpoint: upload WAV → transcribe → FSM step."""
     import io
     import wave
+
     import numpy as np
 
     transport = ASGITransport(app=app)
@@ -195,12 +201,12 @@ async def test_audio_interact_upload():
 async def test_gemini_api_fallback(monkeypatch):
     """Test that VLLMClient attempts Gemini API fallback when configured."""
     from services.llm.vllm_client import VLLMClient
-    from config.config import get_settings
 
     client = VLLMClient(base_url="http://invalid-vllm-host-9999.local/v1")
-    
+
     # Mock _call_gemini_api to verify it's reached when vLLM fails
     called = False
+
     async def mock_gemini(system_prompt, user_prompt):
         nonlocal called
         called = True

@@ -5,9 +5,6 @@ These models represent the beneficiary profile stored in MongoDB.
 All sensitive data (phone numbers) are stored as salted hashes.
 """
 
-from datetime import datetime, timezone
-from typing import Optional, List, Literal
-from pydantic import BaseModel, Field, ConfigDict, field_validator
 import hashlib
 import secrets
 from datetime import datetime
@@ -51,11 +48,11 @@ class Demographics(BaseModel):
         default=0,
         description="Mapped education tier: 0=None, 1=Class 5, 2=Class 8, 3=Class 10, 4=Class 12+",
         ge=0,
-        le=4
+        le=4,
     )
-    caste_category: Optional[str] = Field(
+    caste_category: str | None = Field(
         default="SCHEDULED_CASTE",
-        description="Beneficiary caste/social category for PM-AJAY eligibility"
+        description="Beneficiary caste/social category for PM-AJAY eligibility",
     )
 
 
@@ -127,15 +124,13 @@ class ConsentAudit(BaseModel):
     )
     purpose: str = Field(
         default="PM-AJAY Vocational Discovery & Livelihood Scheme Matching",
-        description="Specified purpose of processing under DPDP Act 2023"
+        description="Specified purpose of processing under DPDP Act 2023",
     )
     consent_withdrawn: bool = Field(
-        default=False,
-        description="Whether consent has been revoked by data principal"
+        default=False, description="Whether consent has been revoked by data principal"
     )
-    withdrawal_timestamp: Optional[datetime] = Field(
-        default=None,
-        description="Timestamp of consent withdrawal"
+    withdrawal_timestamp: datetime | None = Field(
+        default=None, description="Timestamp of consent withdrawal"
     )
 
 

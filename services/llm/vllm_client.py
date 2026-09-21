@@ -51,7 +51,9 @@ class VLLMClient:
         self.timeout = timeout or settings.vllm_timeout_seconds
         self.schema_json = ExtractedSlots.model_json_schema()
 
-    async def _call_gemini_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+    async def _call_gemini_api(
+        self, system_prompt: str, user_prompt: str
+    ) -> str | None:
         """
         Call Gemini API fallback when local vLLM is unreachable.
         Uses GEMINI_API_KEY environment variable or settings.
@@ -64,29 +66,24 @@ class VLLMClient:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
 
         payload = {
-            "system_instruction": {
-                "parts": [{"text": system_prompt}]
-            },
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": user_prompt}]
-                }
-            ],
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
             "generationConfig": {
                 "temperature": 0.1,
                 "responseMimeType": "application/json",
-            }
+            },
         }
 
         try:
-            async with httpx.AsyncClient(timeout=settings.gemini_timeout_seconds) as client:
+            async with httpx.AsyncClient(
+                timeout=settings.gemini_timeout_seconds
+            ) as client:
                 resp = await client.post(url, json=payload)
                 resp.raise_for_status()
                 data = resp.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 return text
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - provider fallback must handle runtime failures
             logger.warning("Gemini API fallback call failed: %s", exc)
             return None
 
@@ -148,24 +145,22 @@ class VLLMClient:
             ValueError,
             ValidationError,
         ) as exc:
-            json.JSONDecodeError,
-            KeyError,
-            TypeError,
-            ValueError,
-            ValidationError,
-        ) as e:
             logger.warning(
                 "vLLM server call failed (%s). Trying Gemini API fallback...",
                 exc,
             )
-            gemini_text = await self._call_gemini_api(SYSTEM_PROMPT_PM_AJAY, user_prompt)
+            gemini_text = await self._call_gemini_api(
+                SYSTEM_PROMPT_PM_AJAY, user_prompt
+            )
             if gemini_text:
                 try:
                     parsed_json = json.loads(gemini_text)
                     logger.info("Successfully extracted slots via Gemini API fallback")
                     return ExtractedSlots.model_validate(parsed_json)
-                except Exception as g_err:
-                    logger.warning("Failed to parse Gemini API JSON response: %s", g_err)
+                except Exception as g_err:  # noqa: BLE001 - provider fallback must handle runtime failures
+                    logger.warning(
+                        "Failed to parse Gemini API JSON response: %s", g_err
+                    )
 
             logger.warning("Falling back to local slot extractor.")
             return self._fallback_extract(user_transcript, current_state, known_slots)
@@ -318,12 +313,6 @@ class VLLMClient:
                 "vLLM enterprise intake call failed: %s. "
                 "Running dialect fallback parser.",
                 exc,
-            TypeError,
-            ValueError,
-            ValidationError,
-        ) as e:
-            logger.warning(
-                f"vLLM enterprise intake call failed: {e}. Running dialect fallback parser."
             )
             return self._fallback_extract_enterprise(user_transcript, current_step)
 

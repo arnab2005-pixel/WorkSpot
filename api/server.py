@@ -8,6 +8,7 @@ Wires:
 - Health check endpoints
 """
 
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,11 +17,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config.config import get_settings
-import logging
+from api.routes_client import fsm
+from api.routes_client import router as client_router
 from api.routes_mock import router as mock_router
 from api.routes_telephony_ws import router as ws_router
-from api.routes_client import router as client_router, fsm
+from config.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -83,6 +84,7 @@ app.include_router(client_router, prefix="", tags=["client-alias"])
 app.include_router(mock_router)
 app.include_router(ws_router)
 
+
 @app.get("/health")
 async def health_check():
     """Healthcheck endpoint reporting database and assistant status."""
@@ -93,7 +95,9 @@ async def health_check():
         "app": settings.app_name,
         "version": settings.app_version,
         "database": {
-            "mongodb": "connected" if mongo_connected else "in_memory_or_offline_fallback",
+            "mongodb": "connected"
+            if mongo_connected
+            else "in_memory_or_offline_fallback",
             "redis": "connected" if redis_connected else "in_memory_fallback",
         },
     }
@@ -113,8 +117,11 @@ async def api_info():
 # Mount frontend build SPA if available (evaluated after all API endpoints)
 web_dist_path = Path(__file__).parent.parent / "apps" / "web" / "dist"
 if web_dist_path.exists():
-    app.mount("/", StaticFiles(directory=str(web_dist_path), html=True), name="frontend")
+    app.mount(
+        "/", StaticFiles(directory=str(web_dist_path), html=True), name="frontend"
+    )
 else:
+
     @app.get("/")
     async def root():
         """Root info endpoint when frontend is not built."""

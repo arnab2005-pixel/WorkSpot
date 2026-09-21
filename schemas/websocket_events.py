@@ -6,9 +6,6 @@ between FreeSWITCH (via mod_audio_fork) and the media server.
 """
 
 from datetime import datetime, timezone
-from typing import Optional, Literal, Any, Union
-from pydantic import BaseModel, Field, ConfigDict
-from datetime import datetime
 from enum import Enum
 from typing import Literal
 
@@ -42,20 +39,16 @@ class WSIncomingMessage(BaseModel):
     """Base model for incoming WebSocket messages."""
 
     event: WSMessageType
-    session_id: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     session_id: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class WSOutgoingMessage(BaseModel):
     """Base model for outgoing WebSocket messages."""
 
     event: WSMessageType
-    session_id: Optional[str] = None
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     session_id: str | None = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ============================================================

@@ -3,7 +3,8 @@ Base repository providing common async MongoDB operations and error handling.
 """
 
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Any
+
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pymongo.errors import PyMongoError
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class BaseRepository:
     """Abstract base repository for MongoDB collections."""
 
-    def __init__(self, client: Optional[MongoDBClient] = None):
+    def __init__(self, client: MongoDBClient | None = None):
         self._client = client or get_mongo_client()
 
     @property
@@ -29,15 +30,15 @@ class BaseRepository:
         return True
 
     @property
-    def collection(self) -> Optional[AsyncIOMotorCollection]:
+    def collection(self) -> AsyncIOMotorCollection | None:
         raise NotImplementedError("Subclasses must implement collection property")
 
-    async def count(self, filter_dict: Optional[Dict[str, Any]] = None) -> int:
+    async def count(self, filter_dict: dict[str, Any] | None = None) -> int:
         """Count documents matching filter."""
         if not await self.ensure_connected() or self.collection is None:
             return 0
         try:
             return await self.collection.count_documents(filter_dict or {})
-        except Exception as e:
-            logger.error(f"Failed to count documents: {e}")
+        except PyMongoError:
+            logger.exception("Failed to count documents")
             return 0

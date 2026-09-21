@@ -5,10 +5,11 @@ and latency metrics persisted from Redis into MongoDB.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+
+from pydantic import ValidationError
 from pymongo.errors import PyMongoError
 
-from schemas.call_session import CallSessionRecord, TurnRecord, CallLatencyMetrics
+from schemas.call_session import CallLatencyMetrics, CallSessionRecord, TurnRecord
 from schemas.session import SessionData
 from services.db.repositories.base_repository import BaseRepository
 
@@ -27,8 +28,8 @@ class SessionRepository(BaseRepository):
     async def archive_session(
         self,
         session: SessionData,
-        final_state: Optional[str] = None,
-        turns: Optional[List[TurnRecord]] = None,
+        final_state: str | None = None,
+        turns: list[TurnRecord] | None = None,
     ) -> bool:
         """
         Archive an ephemeral Redis SessionData instance into MongoDB call_sessions.
@@ -38,11 +39,10 @@ class SessionRepository(BaseRepository):
 
         now = datetime.now(timezone.utc)
         turn_logs = turns or []
-        
+
         # Aggregate latencies
         total_asr = session.asr_latency_ms
         total_llm = session.llm_latency_ms
-        total_tts = session.tts_latency_ms
         total_vector = session.vector_search_latency_ms
         turns_count = session.turn_count or max(len(turn_logs), 1)
 
@@ -51,11 +51,17 @@ class SessionRepository(BaseRepository):
 
         metrics = CallLatencyMetrics(
             total_call_duration_seconds=round(max(duration, 0.0), 2),
-            p50_turn_latency_ms=int(session.total_latency_ms / turns_count) if turns_count else 0,
-            p95_turn_latency_ms=int(session.total_latency_ms / turns_count * 1.2) if turns_count else 0,
+            p50_turn_latency_ms=int(session.total_latency_ms / turns_count)
+            if turns_count
+            else 0,
+            p95_turn_latency_ms=int(session.total_latency_ms / turns_count * 1.2)
+            if turns_count
+            else 0,
             average_asr_latency_ms=int(total_asr / turns_count) if turns_count else 0,
             average_llm_latency_ms=int(total_llm / turns_count) if turns_count else 0,
-            average_vector_search_ms=int(total_vector / turns_count) if turns_count else 0,
+            average_vector_search_ms=int(total_vector / turns_count)
+            if turns_count
+            else 0,
         )
 
         final_slots_map = {
@@ -93,7 +99,7 @@ class SessionRepository(BaseRepository):
             logger.error(f"Failed to archive call session {session.session_id}: {e}")
             return False
 
-    async def get_session(self, session_id: str) -> Optional[CallSessionRecord]:
+    async def get_session(self, session_id: str) -> CallSessionRecord | None:
         """Fetch archived call session by ID."""
         if not await self.ensure_connected() or self.collection is None:
             return None
@@ -103,15 +109,18 @@ class SessionRepository(BaseRepository):
             if doc:
                 return CallSessionRecord.model_validate(doc)
             return None
-        except Exception as e:
-            logger.error(f"Failed to fetch call session {session_id}: {e}")
+        except ValidationError:
+            logger.exception("Invalid call session document for %s", session_id)
+            return None
+        except PyMongoError:
+            logger.exception("Failed to fetch call session %s", session_id)
             return None
 
     async def list_recent_sessions(
         self,
-        phone_hash: Optional[str] = None,
+        phone_hash: str | None = None,
         limit: int = 10,
-    ) -> List[CallSessionRecord]:
+    ) -> list[CallSessionRecord]:
         """List recent call sessions, optionally filtered by phone hash."""
         if not await self.ensure_connected() or self.collection is None:
             return []
@@ -121,6 +130,9 @@ class SessionRepository(BaseRepository):
             cursor = self.collection.find(query).sort("start_time", -1).limit(limit)
             docs = await cursor.to_list(length=limit)
             return [CallSessionRecord.model_validate(d) for d in docs]
-        except Exception as e:
-            logger.error(f"Failed to list call sessions: {e}")
+        except ValidationError:
+            logger.exception("Invalid call session document in recent sessions")
+            return []
+        except PyMongoError:
+            logger.exception("Failed to list call sessions")
             return []

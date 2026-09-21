@@ -3,11 +3,13 @@ Beneficiary repository managing citizen profiles, DPDP Act voice consent audits,
 salted phone hashing, and PM-AJAY GIA subsidy routing.
 """
 
-import logging
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any, Tuple
 import hashlib
+import logging
 import secrets
+from datetime import datetime, timezone
+from typing import Any
+
+from pydantic import ValidationError
 from pymongo.errors import PyMongoError
 
 from schemas.beneficiary import BeneficiaryRecord, ConsentAudit
@@ -27,7 +29,7 @@ class BeneficiaryRepository(BaseRepository):
         return self._client.beneficiaries
 
     @staticmethod
-    def hash_phone(phone_number: str, salt: Optional[str] = None) -> Tuple[str, str]:
+    def hash_phone(phone_number: str, salt: str | None = None) -> tuple[str, str]:
         """
         Produce a salted SHA-256 hash of a normalized Indian mobile number.
         Returns: (hash_hex, salt_hex)
@@ -71,10 +73,12 @@ class BeneficiaryRepository(BaseRepository):
             logger.info(f"Beneficiary profile saved: {beneficiary.phone_hash[:8]}...")
             return True
         except PyMongoError as e:
-            logger.error(f"Failed to save beneficiary {beneficiary.phone_hash[:8]}: {e}")
+            logger.error(
+                f"Failed to save beneficiary {beneficiary.phone_hash[:8]}: {e}"
+            )
             return False
 
-    async def get_beneficiary(self, phone_hash: str) -> Optional[BeneficiaryRecord]:
+    async def get_beneficiary(self, phone_hash: str) -> BeneficiaryRecord | None:
         """Retrieve a beneficiary by phone hash."""
         if not await self.ensure_connected() or self.collection is None:
             return None
@@ -84,8 +88,11 @@ class BeneficiaryRepository(BaseRepository):
             if doc:
                 return BeneficiaryRecord.model_validate(doc)
             return None
-        except Exception as e:
-            logger.error(f"Failed to fetch beneficiary: {e}")
+        except ValidationError:
+            logger.exception("Invalid beneficiary document for %s", phone_hash)
+            return None
+        except PyMongoError:
+            logger.exception("Failed to fetch beneficiary %s", phone_hash)
             return None
 
     async def record_voice_consent(
@@ -93,7 +100,7 @@ class BeneficiaryRepository(BaseRepository):
         phone_hash: str,
         audio_vault_ref: str,
         language: str = "hi",
-        consent_timestamp: Optional[datetime] = None,
+        consent_timestamp: datetime | None = None,
     ) -> bool:
         """Record DPDP Act 2023 compliant voice-verified consent audit."""
         if not await self.ensure_connected() or self.collection is None:
@@ -136,7 +143,9 @@ class BeneficiaryRepository(BaseRepository):
                 {
                     "$set": {
                         "consent_audit.consent_withdrawn": True,
-                        "consent_audit.withdrawal_timestamp": datetime.now(timezone.utc),
+                        "consent_audit.withdrawal_timestamp": datetime.now(
+                            timezone.utc
+                        ),
                         "dpiu_prefill_status": "CONSENT_WITHDRAWN_FROZEN",
                         "updated_at": datetime.now(timezone.utc),
                     }
@@ -152,7 +161,7 @@ class BeneficiaryRepository(BaseRepository):
         self,
         phone_hash: str,
         enterprise: EnterpriseAspirations,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Evaluate enterprise capital requirements and route to appropriate credit or subsidy scheme:
         1. Capital Subsidy (PM-AJAY GIA): Under 50k, eligible for grant up to 50k.
@@ -201,7 +210,7 @@ class BeneficiaryRepository(BaseRepository):
                 logger.info(
                     f"Updated beneficiary {phone_hash[:8]} with GIA/credit routing: {credit_routing}"
                 )
-            except Exception as e:
-                logger.error(f"Failed to update beneficiary enterprise routing: {e}")
+            except PyMongoError:
+                logger.exception("Failed to update beneficiary enterprise routing")
 
         return routing_record

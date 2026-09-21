@@ -3,7 +3,8 @@ District repository managing LGD master directories and dialect alias resolution
 """
 
 import logging
-from typing import Optional, List, Dict, Any
+
+from pydantic import ValidationError
 from pymongo.errors import PyMongoError
 
 from schemas.lgd_district import LgdDistrictRecord
@@ -21,7 +22,7 @@ class DistrictRepository(BaseRepository):
     def collection(self):
         return self._client.lgd_districts
 
-    async def resolve_district(self, text: str) -> Optional[LgdDistrictRecord]:
+    async def resolve_district(self, text: str) -> LgdDistrictRecord | None:
         """
         Resolve spoken text (English/Hindi/Dialect) to standardized LGD district record.
         e.g. "बनारस", "Kashi", "Varanasi" -> "UP_VARANASI".
@@ -37,9 +38,22 @@ class DistrictRepository(BaseRepository):
                 {
                     "$or": [
                         {"district_code": clean_text.upper()},
-                        {"district_name_en": {"$regex": f"^{clean_text}$", "$options": "i"}},
+                        {
+                            "district_name_en": {
+                                "$regex": f"^{clean_text}$",
+                                "$options": "i",
+                            }
+                        },
                         {"district_name_hi": clean_text},
-                        {"aliases": {"$in": [clean_text, clean_text.lower(), clean_text.title()]}},
+                        {
+                            "aliases": {
+                                "$in": [
+                                    clean_text,
+                                    clean_text.lower(),
+                                    clean_text.title(),
+                                ]
+                            }
+                        },
                     ]
                 }
             )
@@ -50,18 +64,24 @@ class DistrictRepository(BaseRepository):
             # (e.g. "हम बनारस के रहे वाला हईं" contains "बनारस")
             all_districts = await self.list_districts()
             for d in all_districts:
-                if d.district_name_hi in clean_text or d.district_name_en.lower() in clean_text.lower():
+                if (
+                    d.district_name_hi in clean_text
+                    or d.district_name_en.lower() in clean_text.lower()
+                ):
                     return d
                 for alias in d.aliases:
                     if alias in clean_text or alias.lower() in clean_text.lower():
                         return d
 
             return None
-        except Exception as e:
-            logger.error(f"Failed to resolve district from text '{text}': {e}")
+        except ValidationError:
+            logger.exception("Invalid district document resolved from %s", text)
+            return None
+        except PyMongoError:
+            logger.exception("Failed to resolve district from text %s", text)
             return None
 
-    async def get_by_code(self, district_code: str) -> Optional[LgdDistrictRecord]:
+    async def get_by_code(self, district_code: str) -> LgdDistrictRecord | None:
         """Fetch district by LGD code."""
         if not await self.ensure_connected() or self.collection is None:
             return None
@@ -70,8 +90,11 @@ class DistrictRepository(BaseRepository):
             if doc:
                 return LgdDistrictRecord.model_validate(doc)
             return None
-        except Exception as e:
-            logger.error(f"Failed to get district {district_code}: {e}")
+        except ValidationError:
+            logger.exception("Invalid district document for %s", district_code)
+            return None
+        except PyMongoError:
+            logger.exception("Failed to get district %s", district_code)
             return None
 
     async def upsert_district(self, district: LgdDistrictRecord) -> bool:
@@ -89,7 +112,9 @@ class DistrictRepository(BaseRepository):
             logger.error(f"Failed to upsert district {district.district_code}: {e}")
             return False
 
-    async def list_districts(self, state_code: Optional[str] = None) -> List[LgdDistrictRecord]:
+    async def list_districts(
+        self, state_code: str | None = None
+    ) -> list[LgdDistrictRecord]:
         """List all districts, optionally filtered by state."""
         if not await self.ensure_connected() or self.collection is None:
             return []
@@ -98,6 +123,9 @@ class DistrictRepository(BaseRepository):
             cursor = self.collection.find(query)
             docs = await cursor.to_list(length=200)
             return [LgdDistrictRecord.model_validate(d) for d in docs]
-        except Exception as e:
-            logger.error(f"Failed to list districts: {e}")
+        except ValidationError:
+            logger.exception("Invalid district document in district list")
+            return []
+        except PyMongoError:
+            logger.exception("Failed to list districts")
             return []

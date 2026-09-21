@@ -98,8 +98,13 @@ async def test_context_chained_progression_concrete_examples():
 
     # Turn N+1: User states Trade: "हमरे घरे 2 साल से सिलाई के काम होत बा।"
     res_trade = await fsm.step(sess_id, "हमरे घरे 2 साल से सिलाई के काम होत बा।")
-    assert res_trade["current_state"] in (FSMState.MOBILITY_AND_INTENT.value, FSMState.ENTERPRISE_CAPITAL.value)
-    assert "2 साल का सिलाई का तजुर्बा तो बहुत काम आएगा" in res_trade["spoken_response_indic"]
+    assert res_trade["current_state"] in (
+        FSMState.MOBILITY_AND_INTENT.value,
+        FSMState.ENTERPRISE_CAPITAL.value,
+    )
+    assert (
+        "2 साल का सिलाई का तजुर्बा तो बहुत काम आएगा" in res_trade["spoken_response_indic"]
+    )
     assert "गारमेंट फैक्ट्री में पक्की नौकरी" in res_trade["spoken_response_indic"]
     assert "दुकान" in res_trade["spoken_response_indic"]
     assert len(res_trade["options"]) >= 3
@@ -126,7 +131,9 @@ async def test_context_chained_contradiction_repair():
     await fsm.step(sess_id, "सिलाई दर्जी")
 
     # User says factory job but cannot travel (0 km home-bound)
-    res_contra = await fsm.step(sess_id, "हम फैक्ट्री में नौकरी करना चाहते हैं लेकिन गाँव से बाहर नहीं जा सकते, घर पर ही")
+    res_contra = await fsm.step(
+        sess_id, "हम फैक्ट्री में नौकरी करना चाहते हैं लेकिन गाँव से बाहर नहीं जा सकते, घर पर ही"
+    )
     assert res_contra["current_state"] == FSMState.CONTEXTUAL_REPAIR.value
     assert "आपने पहले फैक्ट्री में नौकरी की बात कही थी" in res_contra["spoken_response_indic"]
     assert "गाँव से बाहर नहीं जा सकते" in res_contra["spoken_response_indic"]

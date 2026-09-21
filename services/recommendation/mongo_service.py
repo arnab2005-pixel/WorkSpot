@@ -10,6 +10,7 @@ Includes fallback cosine-similarity matcher for standalone/offline MongoDB testi
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -172,7 +173,15 @@ class MongoService:
             )
 
         try:
-            dist_clean = district_code.replace("UP_", "").replace("BR_", "").replace("MP_", "").replace("RJ_", "").replace("MH_", "").replace("WB_", "").strip()
+            dist_clean = (
+                district_code.replace("UP_", "")
+                .replace("BR_", "")
+                .replace("MP_", "")
+                .replace("RJ_", "")
+                .replace("MH_", "")
+                .replace("WB_", "")
+                .strip()
+            )
             query = {
                 "status": "ACTIVE",
                 "$or": [
@@ -403,7 +412,7 @@ class MongoService:
             logger.error(f"Failed to get beneficiary: {e}")
             return None
 
-    async def save_session_record(self, session_id: str, data: Dict[str, Any]) -> bool:
+    async def save_session_record(self, session_id: str, data: dict[str, Any]) -> bool:
         """Persist or update conversational session document in MongoDB."""
         await self.connect()
         if not self._connected or self.db is None:
@@ -422,7 +431,7 @@ class MongoService:
             logger.error("Failed to save session to MongoDB: %s", exc)
             return False
 
-    async def get_session_record(self, session_id: str) -> Optional[Dict[str, Any]]:
+    async def get_session_record(self, session_id: str) -> dict[str, Any] | None:
         """Retrieve conversational session document from MongoDB."""
         await self.connect()
         if not self._connected or self.db is None:
@@ -433,4 +442,3 @@ class MongoService:
         except PyMongoError as exc:
             logger.error("Failed to get session from MongoDB: %s", exc)
             return None
-

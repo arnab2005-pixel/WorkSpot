@@ -40,6 +40,7 @@ class FSMState(str, Enum):
 
 class DialogueTurn(BaseModel):
     """Individual turn record in the context-chained conversation."""
+
     turn_index: int
     system_question: str
     user_raw_transcript: str
@@ -53,24 +54,25 @@ class DynamicChainedState(BaseModel):
     Context-Chained State Tracking Schema.
     Tracks accumulated profile slots and dialogue trajectory metadata.
     """
+
     session_id: str
     current_step: str
     # Accumulated Profile
-    district: Optional[str] = None
-    block: Optional[str] = None
-    trade: Optional[str] = None
-    prior_experience: Optional[str] = None
-    employment_intent: Optional[str] = None  # WAGE vs SELF_EMPLOYMENT
-    premise_type: Optional[str] = None
-    capital_needed: Optional[str] = None
-    mobility_km: Optional[int] = None
-    education_level: Optional[str] = None
+    district: str | None = None
+    block: str | None = None
+    trade: str | None = None
+    prior_experience: str | None = None
+    employment_intent: str | None = None  # WAGE vs SELF_EMPLOYMENT
+    premise_type: str | None = None
+    capital_needed: str | None = None
+    mobility_km: int | None = None
+    education_level: str | None = None
 
     # Trajectory & Memory Chaining
-    turn_history: List[DialogueTurn] = Field(default_factory=list)
-    last_turn_summary: Optional[str] = None
-    active_conversational_hook: Optional[str] = None
-    options: List[str] = Field(default_factory=list)
+    turn_history: list[DialogueTurn] = Field(default_factory=list)
+    last_turn_summary: str | None = None
+    active_conversational_hook: str | None = None
+    options: list[str] = Field(default_factory=list)
 
 
 class SlotStatus(str, Enum):
@@ -181,6 +183,7 @@ class SessionData(BaseModel):
     previous_state: FSMState | None = None
     language: str = "hi"
     dialect: str | None = "bhojpuri_mixed"
+    chained_state: DynamicChainedState | None = None
 
     # Profiling slots
     slots: dict[str, ProfilingSlot] = Field(default_factory=dict)

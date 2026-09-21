@@ -159,10 +159,9 @@ class SileroVAD:
             try:
                 resolved_path = self._download_model()
             except Exception as dl_err:  # noqa: BLE001 - download failure fallback
-                logger.warning("Could not download Silero VAD model: %s. Falling back to energy VAD.", dl_err)
-            except Exception as dl_err:  # noqa: BLE001 - VAD failure must use energy-VAD fallback
                 logger.warning(
-                    f"Could not download Silero VAD model: {dl_err}. Falling back to energy VAD."
+                    "Could not download Silero VAD model: %s. Falling back to energy VAD.",
+                    dl_err,
                 )
                 return
 
@@ -170,15 +169,15 @@ class SileroVAD:
             self.session = ort.InferenceSession(resolved_path, providers=providers)
             self.input_names = [inp.name for inp in self.session.get_inputs()]
             self.output_names = [out.name for out in self.session.get_outputs()]
-            logger.info("Loaded Silero VAD model from %s with inputs: %s", resolved_path, self.input_names)
-        except Exception as exc:  # noqa: BLE001 - ONNX session failure fallback
-            logger.warning("Failed to load Silero VAD ONNX session: %s. Falling back to energy VAD.", exc)
             logger.info(
-                f"Loaded Silero VAD model from {resolved_path} with inputs: {self.input_names}"
+                "Loaded Silero VAD model from %s with inputs: %s",
+                resolved_path,
+                self.input_names,
             )
-        except Exception as e:  # noqa: BLE001 - VAD failure must use energy-VAD fallback
+        except Exception as exc:  # noqa: BLE001 - ONNX session failure fallback
             logger.warning(
-                f"Failed to load Silero VAD ONNX session: {e}. Falling back to energy VAD."
+                "Failed to load Silero VAD ONNX session: %s. Falling back to energy VAD.",
+                exc,
             )
             self.session = None
 
@@ -266,9 +265,7 @@ class SileroVAD:
                     prob = float(outs[0].flatten()[0])
             except Exception as exc:  # noqa: BLE001 - ONNX inference fallback
                 logger.debug("VAD inference error: %s, falling back to energy.", exc)
-                rms = float(np.sqrt(np.mean(frame ** 2)))
-            except Exception as e:  # noqa: BLE001 - VAD failure must use energy-VAD fallback
-                logger.debug(f"VAD inference error: {e}, falling back to energy.")
+                rms = float(np.sqrt(np.mean(frame**2)))
                 rms = float(np.sqrt(np.mean(frame**2)))
                 prob = min(1.0, rms * 15.0)
         else:
@@ -480,23 +477,13 @@ class SileroVAD:
                 break
             except Exception as exc:  # noqa: BLE001 - stream error recovery
                 logger.error("VAD stream processing error: %s", exc)
-                await output_queue.put(VADResult(
-                    state=VADState.ERROR,
-                    probability=0.0,
-                    is_speech=False,
-                    frame=np.zeros(self.window_size, dtype=np.float32),
-                    metadata={"error": str(exc)}
-                ))
-    
-            except Exception as e:  # noqa: BLE001 - VAD failure must use energy-VAD fallback
-                logger.error(f"VAD stream processing error: {e}")
                 await output_queue.put(
                     VADResult(
                         state=VADState.ERROR,
                         probability=0.0,
                         is_speech=False,
                         frame=np.zeros(self.window_size, dtype=np.float32),
-                        metadata={"error": str(e)},
+                        metadata={"error": str(exc)},
                     )
                 )
 

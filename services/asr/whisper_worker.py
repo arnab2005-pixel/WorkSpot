@@ -75,11 +75,11 @@ class WhisperASRWorker:
                     compute_type=compute_type,
                 )
                 logger.info("WhisperModel loaded successfully on requested device.")
-            except Exception as cuda_err:  # noqa: BLE001 - CUDA fallback is intentional
             except Exception as cuda_err:  # noqa: BLE001 - Whisper model failure must use fallback
                 logger.warning(
                     "Failed to load Whisper on %s (%s). Falling back to CPU int8.",
-                    device, cuda_err
+                    device,
+                    cuda_err,
                 )
                 self.model = WhisperModel(
                     self.model_size,
@@ -88,10 +88,10 @@ class WhisperASRWorker:
                 )
                 logger.info("WhisperModel loaded on CPU fallback.")
         except Exception as exc:  # noqa: BLE001 - fallback to mock mode
-            logger.warning("faster-whisper not available or model load failed: %s. Running in mock/fallback mode.", exc)
-        except Exception as e:  # noqa: BLE001 - Whisper model failure must use fallback
             logger.warning(
-                f"faster-whisper not available or model load failed: {e}. Running in mock/fallback mode."
+                "faster-whisper not available or model load failed: %s. "
+                "Running in mock/fallback mode.",
+                exc,
             )
             self.model = None
 
@@ -175,8 +175,6 @@ class WhisperASRWorker:
                 fallback_prompt_indic=fallback_prompt,
             )
 
-        except Exception as exc:
-            logger.exception("Error during Whisper transcription: %s", exc)
         except Exception:
             logger.exception("Error during Whisper transcription")
             latency_ms = int((time.perf_counter() - start_time) * 1000)

@@ -282,8 +282,8 @@ async def telephony_media_ws(websocket: WebSocket, session_id: str):
 
     except WebSocketDisconnect:
         logger.info("Telephony WebSocket disconnected for session %s", session_id)
-    except Exception as exc:
-        logger.exception("Error in telephony WebSocket loop: %s", exc)
+    except Exception:
+        logger.exception("Error in telephony WebSocket loop")
     finally:
         await session.stop()
         logger.info(f"Telephony session resources cleaned up for {session_id}")

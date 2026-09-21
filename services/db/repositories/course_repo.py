@@ -5,8 +5,10 @@ and high-performance in-memory cosine fallback matching.
 
 import logging
 import time
-from typing import List, Optional, Dict, Any
+from typing import Any
+
 import numpy as np
+from pydantic import ValidationError
 from pymongo.errors import OperationFailure, PyMongoError
 
 from config.config import get_settings
@@ -28,13 +30,13 @@ class CourseRepository(BaseRepository):
 
     async def search_courses(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         district_code: str,
         education_tier: int = 1,
         limit: int = 2,
         is_enterprise: bool = False,
         has_prior_experience: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Execute semantic course search with compound filtering per spec:
         - $vectorSearch on nsqf_vector_index
@@ -61,11 +63,7 @@ class CourseRepository(BaseRepository):
                     },
                 }
             },
-            {
-                "$addFields": {
-                    "score": {"$meta": "vectorSearchScore"}
-                }
-            },
+            {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
             {"$limit": limit},
         ]
 
@@ -74,7 +72,9 @@ class CourseRepository(BaseRepository):
                 cursor = self.collection.aggregate(pipeline)
                 results = await cursor.to_list(length=limit)
                 elapsed_ms = (time.perf_counter() - start) * 1000.0
-                logger.info(f"Atlas Vector Search returned {len(results)} courses in {elapsed_ms:.1f}ms")
+                logger.info(
+                    f"Atlas Vector Search returned {len(results)} courses in {elapsed_ms:.1f}ms"
+                )
 
                 if is_enterprise and results:
                     for r in results:
@@ -90,34 +90,48 @@ class CourseRepository(BaseRepository):
                     f"Executing vector fallback matcher."
                 )
                 return await self._fallback_vector_search(
-                    query_embedding, district_code, education_tier, limit, is_enterprise, has_prior_experience
+                    query_embedding,
+                    district_code,
+                    education_tier,
+                    limit,
+                    is_enterprise,
+                    has_prior_experience,
                 )
-            except Exception as e:
-                logger.error(f"Error querying courses via Atlas Search: {e}", exc_info=True)
+            except Exception:
+                logger.exception("Error querying courses via Atlas Search")
                 return await self._fallback_vector_search(
-                    query_embedding, district_code, education_tier, limit, is_enterprise, has_prior_experience
+                    query_embedding,
+                    district_code,
+                    education_tier,
+                    limit,
+                    is_enterprise,
+                    has_prior_experience,
                 )
         else:
-            return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+            return self._mock_course_results(
+                district_code, is_enterprise, has_prior_experience
+            )
 
     async def _fallback_vector_search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         district_code: str,
         education_tier: int,
         limit: int,
         is_enterprise: bool = False,
         has_prior_experience: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         High-performance in-memory cosine fallback for standard MongoDB containers or offline testing.
         """
         if not self._client.is_connected or self.collection is None:
-            return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+            return self._mock_course_results(
+                district_code, is_enterprise, has_prior_experience
+            )
 
         try:
             start_fallback = time.perf_counter()
-            query: Dict[str, Any] = {
+            query: dict[str, Any] = {
                 "status": "ACTIVE",
                 "district_availability": district_code,
                 "min_education_tier": {"$lte": education_tier},
@@ -131,7 +145,9 @@ class CourseRepository(BaseRepository):
                 docs = await cursor.to_list(length=100)
 
             if not docs:
-                return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+                return self._mock_course_results(
+                    district_code, is_enterprise, has_prior_experience
+                )
 
             q_vec = np.array(query_embedding, dtype=np.float32)
             norm_q = np.linalg.norm(q_vec)
@@ -144,7 +160,11 @@ class CourseRepository(BaseRepository):
                 if emb:
                     c_vec = np.array(emb, dtype=np.float32)
                     norm_c = np.linalg.norm(c_vec)
-                    score = float(np.dot(q_vec, c_vec) / (norm_q * norm_c)) if norm_c > 0 else 0.0
+                    score = (
+                        float(np.dot(q_vec, c_vec) / (norm_q * norm_c))
+                        if norm_c > 0
+                        else 0.0
+                    )
                 else:
                     score = 0.5
 
@@ -160,19 +180,23 @@ class CourseRepository(BaseRepository):
 
             scored.sort(key=lambda x: x.get("score", 0.0), reverse=True)
             elapsed = (time.perf_counter() - start_fallback) * 1000.0
-            logger.info(f"Fallback cosine search returned {min(len(scored), limit)} courses in {elapsed:.1f}ms")
+            logger.info(
+                f"Fallback cosine search returned {min(len(scored), limit)} courses in {elapsed:.1f}ms"
+            )
             return scored[:limit]
 
-        except Exception as e:
-            logger.error(f"Fallback vector search failed: {e}", exc_info=True)
-            return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+        except Exception:
+            logger.exception("Fallback vector search failed")
+            return self._mock_course_results(
+                district_code, is_enterprise, has_prior_experience
+            )
 
     def _mock_course_results(
         self,
         district_code: str,
         is_enterprise: bool = False,
         has_prior_experience: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Mock course recommendations matching Section 5.1 and enterprise EDP/RPL routing."""
         if is_enterprise:
             if has_prior_experience:
@@ -249,7 +273,7 @@ class CourseRepository(BaseRepository):
             },
         ]
 
-    async def get_by_qp_code(self, qp_code: str) -> Optional[CourseDocument]:
+    async def get_by_qp_code(self, qp_code: str) -> CourseDocument | None:
         """Fetch course by Qualification Pack code."""
         if not await self.ensure_connected() or self.collection is None:
             return None
@@ -258,8 +282,11 @@ class CourseRepository(BaseRepository):
             if doc:
                 return CourseDocument.model_validate(doc)
             return None
-        except Exception as e:
-            logger.error(f"Failed to get course {qp_code}: {e}")
+        except ValidationError:
+            logger.exception("Invalid course document for %s", qp_code)
+            return None
+        except PyMongoError:
+            logger.exception("Failed to get course %s", qp_code)
             return None
 
     async def upsert_course(self, course: CourseDocument) -> bool:
@@ -278,7 +305,7 @@ class CourseRepository(BaseRepository):
             logger.error(f"Failed to upsert course {course.qp_code}: {e}")
             return False
 
-    async def bulk_upsert_courses(self, courses: List[CourseDocument]) -> int:
+    async def bulk_upsert_courses(self, courses: list[CourseDocument]) -> int:
         """Bulk insert/update courses."""
         if not courses:
             return 0

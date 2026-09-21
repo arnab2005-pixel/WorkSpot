@@ -12,17 +12,18 @@ Provides:
 - POST /api/v1/audio/interact (Upload prerecorded audio → transcribe → FSM turn in one call)
 """
 
-import uuid
 import logging
+import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+import numpy as np
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 from pymongo.errors import PyMongoError
 
-from services.orchestrator.state_machine import ConversationFSM
 from schemas.session import FSMState
+from services.orchestrator.state_machine import ConversationFSM
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["client"])
@@ -31,7 +32,7 @@ router = APIRouter(tags=["client"])
 fsm = ConversationFSM()
 
 # Language-specific initial greetings
-INITIAL_GREETINGS: Dict[str, str] = {
+INITIAL_GREETINGS: dict[str, str] = {
     "Hindi": "नमस्ते! मैं पीएम-अजय योजना सहायक हूँ। क्या हम बातचीत शुरू कर सकते हैं?",
     "Bhojpuri": "प्रणाम! हम पीएम-अजय योजना सहायक हईं। का रउवा आपन काम-धंधा आ रोजी-रोजगार के बारे में बात करे खातिर तइयार बानी?",
     "Bengali": "নমস্কার! আমি পিএম-অজয় যোজনা সহায়ক। আপনি কি আপনার কাজ এবং জীবিকা সম্পর্কে কথা বলতে প্রস্তুত?",
@@ -54,23 +55,26 @@ INITIAL_GREETINGS: Dict[str, str] = {
 # Request / Response Schemas
 # =====================================================================
 
+
 class CreateSessionRequest(BaseModel):
-    language: Optional[str] = "Hindi"
-    phone_number: Optional[str] = None
-    district: Optional[str] = "UP_VARANASI"
+    language: str | None = "Hindi"
+    phone_number: str | None = None
+    district: str | None = "UP_VARANASI"
 
 
 class RecommendationItem(BaseModel):
     id: str
-    type: str = Field(..., description="Training | Job | Self-employment | Government support")
+    type: str = Field(
+        ..., description="Training | Job | Self-employment | Government support"
+    )
     title: str
     provider: str
     location: str
     match: int
     explanation: str
-    tags: List[str] = Field(default_factory=list)
-    qp_code: Optional[str] = None
-    stipend: Optional[str] = None
+    tags: list[str] = Field(default_factory=list)
+    qp_code: str | None = None
+    stipend: str | None = None
 
 
 class SessionClientResponse(BaseModel):
@@ -80,55 +84,62 @@ class SessionClientResponse(BaseModel):
     state: str
     initial_prompt_indic: str
     mock_audio_url: str
-    profile: Dict[str, Any]
+    profile: dict[str, Any]
     createdAt: str
     updatedAt: str
-    options: List[str] = Field(default_factory=list)
+    options: list[str] = Field(default_factory=list)
 
 
 class InteractRequest(BaseModel):
     session_id: str
     user_transcript: str
-    language: Optional[str] = None
+    language: str | None = None
 
 
 class InteractResponse(BaseModel):
     session_id: str
     current_state: str
     spoken_response_indic: str
-    updated_slots: Dict[str, Any]
-    profile: Dict[str, Any]
-    recommended_courses: List[RecommendationItem]
+    updated_slots: dict[str, Any]
+    profile: dict[str, Any]
+    recommended_courses: list[RecommendationItem]
     eligible_for_gia_asset_grant: bool
     max_capital_subsidy_inr: float
-    credit_desk_routing: Optional[str]
+    credit_desk_routing: str | None
     is_complete: bool
-    options: List[str] = Field(default_factory=list)
+    options: list[str] = Field(default_factory=list)
 
 
 class AdvisorRequest(BaseModel):
-    session_id: Optional[str] = None
+    session_id: str | None = None
     message: str
-    language: Optional[str] = "Hindi"
+    language: str | None = "Hindi"
 
 
 class AdvisorResponse(BaseModel):
     reply: str
-    suggestions: List[str]
+    suggestions: list[str]
 
 
 # =====================================================================
 # Helper: Map Session State to Frontend Profile
 # =====================================================================
 
-def build_profile_dict(session: Any) -> Dict[str, Any]:
+
+def build_profile_dict(session: Any) -> dict[str, Any]:
     """Transforms backend session entities into frontend Profile model."""
     entities = getattr(session, "extracted_entities", {}) or {}
     slots = getattr(session, "slots", {}) or {}
 
-    trade = entities.get("detected_trade") or (slots.get("TRADE").value if slots.get("TRADE") else "")
-    district = entities.get("district_code") or (slots.get("LOCATION").value if slots.get("LOCATION") else "")
-    intent = entities.get("employment_intent") or (slots.get("INTENT").value if slots.get("INTENT") else "Either")
+    trade = entities.get("detected_trade") or (
+        slots.get("TRADE").value if slots.get("TRADE") else ""
+    )
+    district = entities.get("district_code") or (
+        slots.get("LOCATION").value if slots.get("LOCATION") else ""
+    )
+    intent = entities.get("employment_intent") or (
+        slots.get("INTENT").value if slots.get("INTENT") else "Either"
+    )
     mobility_km = entities.get("mobility_radius_km", 15)
 
     if intent == "SELF_EMPLOYMENT":
@@ -163,19 +174,27 @@ def build_profile_dict(session: Any) -> Dict[str, Any]:
 
 
 async def build_recommendations_for_session(
-    session: Any, mongo_service: Optional[Any] = None
-) -> List[RecommendationItem]:
+    session: Any, mongo_service: Any | None = None
+) -> list[RecommendationItem]:
     """Generates rich recommendation cards querying MongoDB NSQF courses and PM-AJAY GIA subsidy rules."""
     entities = getattr(session, "extracted_entities", {}) or {}
     trade = entities.get("detected_trade", "").lower()
     district = entities.get("district_code", "UP_VARANASI")
-    district_clean = district.replace("UP_", "").replace("BR_", "").replace("MP_", "").replace("RJ_", "").replace("MH_", "").replace("WB_", "").capitalize()
+    district_clean = (
+        district.replace("UP_", "")
+        .replace("BR_", "")
+        .replace("MP_", "")
+        .replace("RJ_", "")
+        .replace("MH_", "")
+        .replace("WB_", "")
+        .capitalize()
+    )
     enterprise = entities.get("enterprise_details", {})
     intent = entities.get("employment_intent", "Either")
     is_self_emp = intent in ("SELF_EMPLOYMENT", "HYBRID", "Either") or bool(enterprise)
     has_exp = float(entities.get("prior_experience_years", 0.0)) > 0
 
-    items: List[RecommendationItem] = []
+    items: list[RecommendationItem] = []
 
     # 1. Query MongoDB for real district courses if connected
     mongo_courses = []
@@ -218,7 +237,12 @@ async def build_recommendations_for_session(
                 location=f"{district_clean} Center",
                 match=match_pct,
                 explanation=f"NSQF Level {nsqf} course in {sector} aligned with your skills. Includes free toolkit, practical workshop, and ₹{stipend} monthly stipend.",
-                tags=[f"NSQF Level {nsqf}", "Free Toolkit", f"Stipend ₹{stipend}/mo", f"{duration_months} Months"],
+                tags=[
+                    f"NSQF Level {nsqf}",
+                    "Free Toolkit",
+                    f"Stipend ₹{stipend}/mo",
+                    f"{duration_months} Months",
+                ],
                 qp_code=qp,
                 stipend=f"₹{stipend} per month",
             )
@@ -236,7 +260,12 @@ async def build_recommendations_for_session(
                     location=f"{district_clean} Skill Center, Cantt",
                     match=96,
                     explanation="NSQF Level 4 training with hands-on garment cutting, machine operation, free toolkit, and ₹1,500 monthly stipend.",
-                    tags=["NSQF Level 4", "Free Toolkit", "Stipend ₹1500/mo", "3 Months"],
+                    tags=[
+                        "NSQF Level 4",
+                        "Free Toolkit",
+                        "Stipend ₹1500/mo",
+                        "3 Months",
+                    ],
                     qp_code="AMH/Q0301",
                     stipend="₹1500 per month",
                 )
@@ -283,7 +312,12 @@ async def build_recommendations_for_session(
                 location=f"{district_clean} District Welfare Office",
                 match=98,
                 explanation="Capital subsidy of up to 50% or ₹50,000 to purchase machinery, work tools, and initial inventory under PM-AJAY.",
-                tags=["₹50,000 Capital Grant", "50% Subsidy", "DPIU Fast-track", "Direct Benefit"],
+                tags=[
+                    "₹50,000 Capital Grant",
+                    "50% Subsidy",
+                    "DPIU Fast-track",
+                    "Direct Benefit",
+                ],
             )
         )
 
@@ -297,7 +331,12 @@ async def build_recommendations_for_session(
             location=f"Lead District Bank / CSC Center, {district_clean}",
             match=88,
             explanation="Concessional micro-loans up to ₹2,00,000 at low interest rates (4-6% p.a.) with Mudra tie-up for equipment and working capital.",
-            tags=["Concessional Credit", "4-6% Interest", "Mudra Scheme", "Financial Support"],
+            tags=[
+                "Concessional Credit",
+                "4-6% Interest",
+                "Mudra Scheme",
+                "Financial Support",
+            ],
         )
     )
 
@@ -324,6 +363,7 @@ async def build_recommendations_for_session(
 # API Endpoints
 # =====================================================================
 
+
 @router.post("/session", response_model=SessionClientResponse)
 async def create_session(req: CreateSessionRequest):
     """
@@ -343,20 +383,27 @@ async def create_session(req: CreateSessionRequest):
     # Persist session record to MongoDB
     if fsm.mongo_service and getattr(fsm.mongo_service, "_connected", False):
         try:
-            await fsm.mongo_service.save_session_record(session_id, {
-                "caller_id": req.phone_number or "web_kiosk_beneficiary",
-                "language": chosen_lang,
-                "district_code": req.district or "UP_VARANASI",
-                "state": "interview",
-                "created_at": datetime.now(timezone.utc),
-            })
+            await fsm.mongo_service.save_session_record(
+                session_id,
+                {
+                    "caller_id": req.phone_number or "web_kiosk_beneficiary",
+                    "language": chosen_lang,
+                    "district_code": req.district or "UP_VARANASI",
+                    "state": "interview",
+                    "created_at": datetime.now(timezone.utc),
+                },
+            )
         except PyMongoError as exc:
             logger.warning("Failed to log session to MongoDB: %s", exc)
 
     initial_prompt = INITIAL_GREETINGS.get(chosen_lang, INITIAL_GREETINGS["Hindi"])
     profile = build_profile_dict(session)
     now_iso = datetime.now(timezone.utc).isoformat()
-    init_options = getattr(session.chained_state, "options", []) or ["हाँ, शुरू करें", "नमस्ते", "योजना की जानकारी"]
+    init_options = getattr(session.chained_state, "options", []) or [
+        "हाँ, शुरू करें",
+        "नमस्ते",
+        "योजना की जानकारी",
+    ]
 
     return SessionClientResponse(
         id=session_id,
@@ -384,7 +431,11 @@ async def get_session(session_id: str):
     lang = session.extracted_entities.get("selected_language", "Hindi")
     profile = build_profile_dict(session)
     now_iso = datetime.now(timezone.utc).isoformat()
-    session_options = getattr(session.chained_state, "options", []) or ["हाँ, शुरू करें", "नमस्ते", "योजना की जानकारी"]
+    session_options = getattr(session.chained_state, "options", []) or [
+        "हाँ, शुरू करें",
+        "नमस्ते",
+        "योजना की जानकारी",
+    ]
 
     return SessionClientResponse(
         id=session_id,
@@ -433,24 +484,35 @@ async def interact(req: InteractRequest):
     # Re-fetch updated session
     session = await fsm.session_cache.get_session(req.session_id)
     profile = build_profile_dict(session)
-    recs = await build_recommendations_for_session(session, mongo_service=fsm.mongo_service)
+    recs = await build_recommendations_for_session(
+        session, mongo_service=fsm.mongo_service
+    )
 
     # Enterprise subsidy checks
     ent = session.extracted_entities.get("enterprise_details", {})
-    eligible_gia = bool(ent) or session.extracted_entities.get("employment_intent") in ("SELF_EMPLOYMENT", "HYBRID")
+    eligible_gia = bool(ent) or session.extracted_entities.get("employment_intent") in (
+        "SELF_EMPLOYMENT",
+        "HYBRID",
+    )
     max_subsidy = 50000.0 if eligible_gia else 0.0
     routing = "DPIU_CAPITAL_GRANT_DESK" if eligible_gia else None
-    is_complete = step_result.get("current_state") in (FSMState.RECOMMENDATION_DELIVERY.value, FSMState.COMPLETED.value)
+    is_complete = step_result.get("current_state") in (
+        FSMState.RECOMMENDATION_DELIVERY.value,
+        FSMState.COMPLETED.value,
+    )
 
     # Update MongoDB session document
     if fsm.mongo_service and getattr(fsm.mongo_service, "_connected", False):
         try:
-            await fsm.mongo_service.save_session_record(req.session_id, {
-                "current_state": step_result.get("current_state"),
-                "updated_slots": step_result.get("updated_slots", {}),
-                "profile": profile,
-                "recommendations_count": len(recs),
-            })
+            await fsm.mongo_service.save_session_record(
+                req.session_id,
+                {
+                    "current_state": step_result.get("current_state"),
+                    "updated_slots": step_result.get("updated_slots", {}),
+                    "profile": profile,
+                    "recommendations_count": len(recs),
+                },
+            )
         except PyMongoError as exc:
             logger.warning("Failed to update session record in MongoDB: %s", exc)
 
@@ -469,7 +531,7 @@ async def interact(req: InteractRequest):
     )
 
 
-@router.get("/recommendations/{session_id}", response_model=List[RecommendationItem])
+@router.get("/recommendations/{session_id}", response_model=list[RecommendationItem])
 async def get_recommendations(session_id: str):
     """
     Fetch tailored livelihood, NSQF training, and GIA subsidy recommendations.
@@ -479,7 +541,9 @@ async def get_recommendations(session_id: str):
         # Fallback dummy session if not yet initialized
         session = await fsm.init_session(session_id)
 
-    return await build_recommendations_for_session(session, mongo_service=fsm.mongo_service)
+    return await build_recommendations_for_session(
+        session, mongo_service=fsm.mongo_service
+    )
 
 
 @router.post("/advisor/chat", response_model=AdvisorResponse)
@@ -502,27 +566,45 @@ async def advisor_chat(req: AdvisorRequest):
             district = dist.replace("UP_", "").capitalize()
 
     # Rule-assisted intelligent conversational livelihood advisor
-    if any(w in msg for w in ["subsidy", "अनुदान", "सब्सिडी", "पूंजी", "50000", "50,000", "gia"]):
+    if any(
+        w in msg
+        for w in ["subsidy", "अनुदान", "सब्सिडी", "पूंजी", "50000", "50,000", "gia"]
+    ):
         reply = (
-            f"पीएम-अजय योजना के तहत अनुसूचित जाति (SC) के लाभार्थियों को खुद का स्वरोज़गार या दुकान शुरू करने के लिए "
-            f"उपकरण और मशीनरी हेतु 50% तक (अधिकतम ₹50,000) की पूंजीगत अनुदान (GIA Subsidy) सीधे दी जाती है। "
-            f"इसके लिए आपका आवेदन जिला कार्यालय (DPIU) द्वारा स्वीकृत किया जाता है।"
+            "पीएम-अजय योजना के तहत अनुसूचित जाति (SC) के लाभार्थियों को खुद का स्वरोज़गार या दुकान शुरू करने के लिए "
+            "उपकरण और मशीनरी हेतु 50% तक (अधिकतम ₹50,000) की पूंजीगत अनुदान (GIA Subsidy) सीधे दी जाती है। "
+            "इसके लिए आपका आवेदन जिला कार्यालय (DPIU) द्वारा स्वीकृत किया जाता है।"
         )
-        suggestions = ["सब्सिडी के लिए कौन से दस्तावेज़ चाहिए?", "प्रशिक्षण केंद्र कहाँ है?", "ऋण सहायता (NSFDC) कैसे मिलेगी?"]
+        suggestions = [
+            "सब्सिडी के लिए कौन से दस्तावेज़ चाहिए?",
+            "प्रशिक्षण केंद्र कहाँ है?",
+            "ऋण सहायता (NSFDC) कैसे मिलेगी?",
+        ]
 
-    elif any(w in msg for w in ["प्रशिक्षण", "कोर्स", "training", "सिलाई", "दर्जी", "सर्टिफिकेट", "stipend"]):
+    elif any(
+        w in msg
+        for w in ["प्रशिक्षण", "कोर्स", "training", "सिलाई", "दर्जी", "सर्टिफिकेट", "stipend"]
+    ):
         reply = (
             f"{district} में स्थित पीएम-अजय कौशल केंद्रों पर {trade or 'सिलाई व अन्य पारंपरिक व्यवसायों'} का प्रशिक्षण "
             f"पूरी तरह निःशुल्क है। इसमें आपको मुफ्त टूल-किट और ₹1,500 प्रति माह का स्टाइपेंड भी दिया जाता है।"
         )
-        suggestions = ["टूल-किट में क्या मिलेगा?", "प्रशिक्षण कितने महीने का होगा?", "दुकान खोलने के लिए सहायता"]
+        suggestions = [
+            "टूल-किट में क्या मिलेगा?",
+            "प्रशिक्षण कितने महीने का होगा?",
+            "दुकान खोलने के लिए सहायता",
+        ]
 
     elif any(w in msg for w in ["loan", "ऋण", "कर्ज", "पैसा", "क्रेडिट", "nsfdc", "mudra"]):
         reply = (
-            f"यदि आपको ₹50,000 से अधिक पूंजी की आवश्यकता है, तो NSFDC माइक्रो-क्रेडिट योजना के अंतर्गत 4% से 6% की रियायती ब्याज दर पर "
-            f"₹2 लाख तक का स्वरोज़गार ऋण उपलब्ध कराया जाता है। इसे मुद्रा (Mudra) योजना से भी जोड़ा जा सकता है।"
+            "यदि आपको ₹50,000 से अधिक पूंजी की आवश्यकता है, तो NSFDC माइक्रो-क्रेडिट योजना के अंतर्गत 4% से 6% की रियायती ब्याज दर पर "
+            "₹2 लाख तक का स्वरोज़गार ऋण उपलब्ध कराया जाता है। इसे मुद्रा (Mudra) योजना से भी जोड़ा जा सकता है।"
         )
-        suggestions = ["ऋण के लिए पात्रता क्या है?", "GIA सब्सिडी कैसे जोड़ें?", "निकटतम सहायता केंद्र"]
+        suggestions = [
+            "ऋण के लिए पात्रता क्या है?",
+            "GIA सब्सिडी कैसे जोड़ें?",
+            "निकटतम सहायता केंद्र",
+        ]
 
     elif any(w in msg for w in ["human", "अधिकारी", "बात", "फोन", "call"]):
         reply = (
@@ -533,19 +615,23 @@ async def advisor_chat(req: AdvisorRequest):
 
     else:
         reply = (
-            f"मैं आपकी पूरी सहायता करने के लिए तैयार हूँ। आप कौशल प्रशिक्षण, पीएम-अजय ₹50,000 उपकरण अनुदान, "
-            f"या स्वरोज़गार ऋण के बारे में कोई भी प्रश्न अपनी भाषा में पूछ सकते हैं।"
+            "मैं आपकी पूरी सहायता करने के लिए तैयार हूँ। आप कौशल प्रशिक्षण, पीएम-अजय ₹50,000 उपकरण अनुदान, "
+            "या स्वरोज़गार ऋण के बारे में कोई भी प्रश्न अपनी भाषा में पूछ सकते हैं।"
         )
-        suggestions = ["उपकरण व दुकान हेतु सब्सिडी", "निःशुल्क प्रशिक्षण व स्टाइपेंड", "NSFDC रियायती ऋण"]
+        suggestions = [
+            "उपकरण व दुकान हेतु सब्सिडी",
+            "निःशुल्क प्रशिक्षण व स्टाइपेंड",
+            "NSFDC रियायती ऋण",
+        ]
 
     return AdvisorResponse(reply=reply, suggestions=suggestions)
 
 
 @router.post("/audio/transcribe")
 async def audio_transcribe(
-    file: UploadFile = File(...),
-    session_id: Optional[str] = Form(None),
-    language: Optional[str] = Form("hi"),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration
+    session_id: str | None = Form(None),
+    language: str | None = Form("hi"),
 ):
     """
     Transcribe an uploaded audio file (WAV, MP3, WebM, OGG, M4A) to text.
@@ -556,8 +642,6 @@ async def audio_transcribe(
       - session_id: Optional session identifier
       - language: Language code (default: "hi")
     """
-    import io
-    import numpy as np
 
     try:
         content = await file.read()
@@ -565,13 +649,17 @@ async def audio_transcribe(
         content_type = (file.content_type or "").lower()
         logger.info(
             "Audio upload received: filename=%s, content_type=%s, size=%d bytes",
-            filename, content_type, len(content),
+            filename,
+            content_type,
+            len(content),
         )
 
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="Empty audio file")
         if len(content) > 25 * 1024 * 1024:  # 25 MB limit
-            raise HTTPException(status_code=413, detail="Audio file too large (max 25 MB)")
+            raise HTTPException(
+                status_code=413, detail="Audio file too large (max 25 MB)"
+            )
 
         # Convert uploaded audio to 16kHz mono float32 numpy array
         audio_array = _decode_audio_to_16k_mono(content, filename, content_type)
@@ -599,14 +687,15 @@ async def audio_transcribe(
 
 class AudioInteractRequest(BaseModel):
     """Response schema for the combined audio upload + FSM interact endpoint."""
-    pass  # Form fields are used directly, not a JSON body
+
+    # Form fields are used directly, not a JSON body
 
 
 @router.post("/audio/interact", response_model=InteractResponse)
 async def audio_interact(
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency declaration
     session_id: str = Form(...),
-    language: Optional[str] = Form("Hindi"),
+    language: str | None = Form("Hindi"),
 ):
     """
     Combined endpoint: Upload a prerecorded audio file → transcribe → feed into FSM.
@@ -619,7 +708,6 @@ async def audio_interact(
       - session_id: Active session ID (required)
       - language: Language name (default: "Hindi")
     """
-    import numpy as np
 
     try:
         content = await file.read()
@@ -627,13 +715,17 @@ async def audio_interact(
         content_type = (file.content_type or "").lower()
         logger.info(
             "Audio interact upload: session=%s, filename=%s, size=%d bytes",
-            session_id, filename, len(content),
+            session_id,
+            filename,
+            len(content),
         )
 
         if len(content) == 0:
             raise HTTPException(status_code=400, detail="Empty audio file")
         if len(content) > 25 * 1024 * 1024:
-            raise HTTPException(status_code=413, detail="Audio file too large (max 25 MB)")
+            raise HTTPException(
+                status_code=413, detail="Audio file too large (max 25 MB)"
+            )
 
         # Decode and transcribe
         audio_array = _decode_audio_to_16k_mono(content, filename, content_type)
@@ -645,7 +737,7 @@ async def audio_interact(
 
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - audio fallback must keep interaction available
         logger.error("Audio interact transcription error: %s", exc)
         transcript = "नमस्ते"
 
@@ -659,13 +751,21 @@ async def audio_interact(
     # Re-fetch updated session
     session = await fsm.session_cache.get_session(session_id)
     profile = build_profile_dict(session)
-    recs = await build_recommendations_for_session(session, mongo_service=fsm.mongo_service)
+    recs = await build_recommendations_for_session(
+        session, mongo_service=fsm.mongo_service
+    )
 
     ent = session.extracted_entities.get("enterprise_details", {})
-    eligible_gia = bool(ent) or session.extracted_entities.get("employment_intent") in ("SELF_EMPLOYMENT", "HYBRID")
+    eligible_gia = bool(ent) or session.extracted_entities.get("employment_intent") in (
+        "SELF_EMPLOYMENT",
+        "HYBRID",
+    )
     max_subsidy = 50000.0 if eligible_gia else 0.0
     routing = "DPIU_CAPITAL_GRANT_DESK" if eligible_gia else None
-    is_complete = step_result.get("current_state") in (FSMState.RECOMMENDATION_DELIVERY.value, FSMState.COMPLETED.value)
+    is_complete = step_result.get("current_state") in (
+        FSMState.RECOMMENDATION_DELIVERY.value,
+        FSMState.COMPLETED.value,
+    )
 
     return InteractResponse(
         session_id=session_id,
@@ -686,6 +786,7 @@ async def audio_interact(
 # Audio Decoding & Transcription Helpers
 # =====================================================================
 
+
 def _decode_audio_to_16k_mono(
     content: bytes,
     filename: str,
@@ -700,8 +801,8 @@ def _decode_audio_to_16k_mono(
     """
     import numpy as np
 
-    is_wav = filename.endswith(".wav") or "wav" in content_type
-    is_raw_pcm = filename.endswith(".pcm") or filename.endswith(".raw")
+    is_wav = filename.endswith((".wav",)) or "wav" in content_type
+    is_raw_pcm = filename.endswith((".pcm", ".raw"))
 
     if is_raw_pcm:
         # Assume raw 16-bit PCM at 16kHz mono
@@ -719,6 +820,7 @@ def _decode_wav(content: bytes) -> "np.ndarray":
     """Decode WAV bytes to 16kHz mono float32 numpy array."""
     import io
     import wave
+
     import numpy as np
 
     try:
@@ -728,16 +830,20 @@ def _decode_wav(content: bytes) -> "np.ndarray":
             frame_rate = wf.getframerate()
             n_frames = wf.getnframes()
             raw_data = wf.readframes(n_frames)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - decoder fallback handles optional codecs
         logger.warning("wave.open failed (%s), trying scipy", exc)
         return _decode_with_pydub_or_scipy(content, "audio.wav")
 
     if sample_width == 2:
         samples = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32) / 32768.0
     elif sample_width == 4:
-        samples = np.frombuffer(raw_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+        samples = (
+            np.frombuffer(raw_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+        )
     else:
-        samples = np.frombuffer(raw_data, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+        samples = (
+            np.frombuffer(raw_data, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+        )
 
     # Mix to mono if stereo
     if n_channels > 1:
@@ -746,15 +852,21 @@ def _decode_wav(content: bytes) -> "np.ndarray":
     # Resample to 16kHz if needed
     if frame_rate != 16000:
         try:
-            from scipy.signal import resample_poly
             from math import gcd
+
+            from scipy.signal import resample_poly
+
             g = gcd(16000, frame_rate)
-            samples = resample_poly(samples, 16000 // g, frame_rate // g).astype(np.float32)
+            samples = resample_poly(samples, 16000 // g, frame_rate // g).astype(
+                np.float32
+            )
         except ImportError:
             # Simple linear interpolation fallback
             target_len = int(len(samples) * 16000 / frame_rate)
             indices = np.linspace(0, len(samples) - 1, target_len)
-            samples = np.interp(indices, np.arange(len(samples)), samples).astype(np.float32)
+            samples = np.interp(indices, np.arange(len(samples)), samples).astype(
+                np.float32
+            )
 
     return samples
 
@@ -762,6 +874,7 @@ def _decode_wav(content: bytes) -> "np.ndarray":
 def _decode_with_pydub_or_scipy(content: bytes, filename: str) -> "np.ndarray":
     """Decode non-WAV audio formats using pydub (ffmpeg) or scipy as fallback."""
     import io
+
     import numpy as np
 
     # Try pydub first (requires ffmpeg)
@@ -773,14 +886,17 @@ def _decode_with_pydub_or_scipy(content: bytes, filename: str) -> "np.ndarray":
         audio_seg = audio_seg.set_channels(1).set_frame_rate(16000).set_sample_width(2)
         raw = audio_seg.raw_data
         samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-        logger.info("Decoded %s via pydub: %.2fs @ 16kHz", filename, len(samples) / 16000)
+        logger.info(
+            "Decoded %s via pydub: %.2fs @ 16kHz", filename, len(samples) / 16000
+        )
         return samples
-    except Exception as pydub_err:
+    except Exception as pydub_err:  # noqa: BLE001 - optional codec fallback
         logger.info("pydub decode failed (%s), trying scipy.io.wavfile", pydub_err)
 
     # Try scipy.io.wavfile (only works for WAV-like formats)
     try:
         from scipy.io import wavfile
+
         sr, data = wavfile.read(io.BytesIO(content))
         if data.dtype == np.int16:
             samples = data.astype(np.float32) / 32768.0
@@ -793,14 +909,16 @@ def _decode_with_pydub_or_scipy(content: bytes, filename: str) -> "np.ndarray":
             samples = samples.mean(axis=1)
 
         if sr != 16000:
-            from scipy.signal import resample_poly
             from math import gcd
+
+            from scipy.signal import resample_poly
+
             g = gcd(16000, sr)
             samples = resample_poly(samples, 16000 // g, sr // g).astype(np.float32)
 
         logger.info("Decoded via scipy: %.2fs @ 16kHz", len(samples) / 16000)
         return samples
-    except Exception as scipy_err:
+    except Exception as scipy_err:  # noqa: BLE001 - optional codec fallback
         logger.warning("scipy decode also failed (%s), returning silence", scipy_err)
         # Return 1 second of silence as absolute fallback
         return np.zeros(16000, dtype=np.float32)
@@ -822,7 +940,6 @@ async def _transcribe_audio_array(audio_array: "np.ndarray") -> str:
             return result.fallback_prompt_indic or "माफ़ कीजियेगा, आवाज़ साफ़ नहीं आई।"
 
         return result.text or "नमस्ते"
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - transcription fallback is intentional
         logger.warning("WhisperASRWorker unavailable (%s), using mock transcript", exc)
         return "हम सिलाई मशीन के दुकान खोलल चाहत बानी, 40000 के पूंजी चाही"
-

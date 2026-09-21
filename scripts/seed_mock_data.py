@@ -12,61 +12,180 @@ Run: python scripts/seed_mock_data.py
 
 import asyncio
 import hashlib
-import secrets
 import random
+import secrets
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import ASCENDING, TEXT
 
 # District data: LGD code -> (State, District Name, Blocks)
 DISTRICTS = {
     # Uttar Pradesh
-    "UP_VARANASI": ("Uttar Pradesh", "Varanasi", ["Chiraigaon", "Kashi Vidyapeeth", "Pindra", "Harhua", "Araziline"]),
-    "UP_PRAYAGRAJ": ("Uttar Pradesh", "Prayagraj", ["Kaurihar", "Phulpur", "Soraon", "Handia", "Meja"]),
-    "UP_LUCKNOW": ("Uttar Pradesh", "Lucknow", ["Bakshi Ka Talab", "Chinhat", "Gosainganj", "Kakori", "Malihabad"]),
-    "UP_CHANDAULI": ("Uttar Pradesh", "Chandauli", ["Chandauli", "Chakia", "Naugarh", "Sakaldiha", "Dhanapur"]),
-    "UP_AGRA": ("Uttar Pradesh", "Agra", ["Agra", "Bah", "Etmadpur", "Fatehabad", "Kheragarh"]),
-    "UP_KANPUR": ("Uttar Pradesh", "Kanpur Nagar", ["Kanpur", "Bhognipur", "Ghatampur", "Narwal", "Sarsaul"]),
-    "UP_ALIGARH": ("Uttar Pradesh", "Aligarh", ["Aligarh", "Atrauli", "Bijauli", "Gangiri", "Iglas"]),
-    "UP_MEERUT": ("Uttar Pradesh", "Meerut", ["Meerut", "Daurala", "Hastinapur", "Janikhurd", "Kharkhoda"]),
-    "UP_GORAKHPUR": ("Uttar Pradesh", "Gorakhpur", ["Gorakhpur", "Bansgaon", "Barhalganj", "Campierganj", "Chauri Chaura"]),
-    "UP_BAREILLY": ("Uttar Pradesh", "Bareilly", ["Bareilly", "Aonla", "Baheri", "Faridpur", "Meerganj"]),
-    
+    "UP_VARANASI": (
+        "Uttar Pradesh",
+        "Varanasi",
+        ["Chiraigaon", "Kashi Vidyapeeth", "Pindra", "Harhua", "Araziline"],
+    ),
+    "UP_PRAYAGRAJ": (
+        "Uttar Pradesh",
+        "Prayagraj",
+        ["Kaurihar", "Phulpur", "Soraon", "Handia", "Meja"],
+    ),
+    "UP_LUCKNOW": (
+        "Uttar Pradesh",
+        "Lucknow",
+        ["Bakshi Ka Talab", "Chinhat", "Gosainganj", "Kakori", "Malihabad"],
+    ),
+    "UP_CHANDAULI": (
+        "Uttar Pradesh",
+        "Chandauli",
+        ["Chandauli", "Chakia", "Naugarh", "Sakaldiha", "Dhanapur"],
+    ),
+    "UP_AGRA": (
+        "Uttar Pradesh",
+        "Agra",
+        ["Agra", "Bah", "Etmadpur", "Fatehabad", "Kheragarh"],
+    ),
+    "UP_KANPUR": (
+        "Uttar Pradesh",
+        "Kanpur Nagar",
+        ["Kanpur", "Bhognipur", "Ghatampur", "Narwal", "Sarsaul"],
+    ),
+    "UP_ALIGARH": (
+        "Uttar Pradesh",
+        "Aligarh",
+        ["Aligarh", "Atrauli", "Bijauli", "Gangiri", "Iglas"],
+    ),
+    "UP_MEERUT": (
+        "Uttar Pradesh",
+        "Meerut",
+        ["Meerut", "Daurala", "Hastinapur", "Janikhurd", "Kharkhoda"],
+    ),
+    "UP_GORAKHPUR": (
+        "Uttar Pradesh",
+        "Gorakhpur",
+        ["Gorakhpur", "Bansgaon", "Barhalganj", "Campierganj", "Chauri Chaura"],
+    ),
+    "UP_BAREILLY": (
+        "Uttar Pradesh",
+        "Bareilly",
+        ["Bareilly", "Aonla", "Baheri", "Faridpur", "Meerganj"],
+    ),
     # Bihar
-    "BR_PATNA": ("Bihar", "Patna", ["Patna Sadar", "Danapur", "Phulwari", "Maner", "Bihta"]),
-    "BR_GAYA": ("Bihar", "Gaya", ["Gaya Sadar", "Bodh Gaya", "Wazirganj", "Tekari", "Sherghati"]),
-    "BR_MUZAFFARPUR": ("Bihar", "Muzaffarpur", ["Muzaffarpur", "Kanti", "Marwan", "Mushari", "Sakri"]),
-    "BR_BHAGALPUR": ("Bihar", "Bhagalpur", ["Bhagalpur", "Nathnagar", "Sultanganj", "Kahalgaon", "Pirpainti"]),
-    "BR_DARBHANGA": ("Bihar", "Darbhanga", ["Darbhanga", "Bahadurpur", "Beniapur", "Ghanshyampur", "Hanumannagar"]),
-    
+    "BR_PATNA": (
+        "Bihar",
+        "Patna",
+        ["Patna Sadar", "Danapur", "Phulwari", "Maner", "Bihta"],
+    ),
+    "BR_GAYA": (
+        "Bihar",
+        "Gaya",
+        ["Gaya Sadar", "Bodh Gaya", "Wazirganj", "Tekari", "Sherghati"],
+    ),
+    "BR_MUZAFFARPUR": (
+        "Bihar",
+        "Muzaffarpur",
+        ["Muzaffarpur", "Kanti", "Marwan", "Mushari", "Sakri"],
+    ),
+    "BR_BHAGALPUR": (
+        "Bihar",
+        "Bhagalpur",
+        ["Bhagalpur", "Nathnagar", "Sultanganj", "Kahalgaon", "Pirpainti"],
+    ),
+    "BR_DARBHANGA": (
+        "Bihar",
+        "Darbhanga",
+        ["Darbhanga", "Bahadurpur", "Beniapur", "Ghanshyampur", "Hanumannagar"],
+    ),
     # Madhya Pradesh
     "MP_BHOPAL": ("Madhya Pradesh", "Bhopal", ["Bhopal", "Berasia", "Huzur", "Kolar"]),
     "MP_INDORE": ("Madhya Pradesh", "Indore", ["Indore", "Depalpur", "Mhow", "Sanwer"]),
-    "MP_JABALPUR": ("Madhya Pradesh", "Jabalpur", ["Jabalpur", "Kundam", "Majholi", "Patan", "Sihora"]),
-    "MP_GWALIOR": ("Madhya Pradesh", "Gwalior", ["Gwalior", "Bhitarwar", "Dabra", "Ghatigaon", "Morar"]),
-    "MP_UJJAIN": ("Madhya Pradesh", "Ujjain", ["Ujjain", "Badnagar", "Khachrod", "Mahidpur", "Tarana"]),
-    
+    "MP_JABALPUR": (
+        "Madhya Pradesh",
+        "Jabalpur",
+        ["Jabalpur", "Kundam", "Majholi", "Patan", "Sihora"],
+    ),
+    "MP_GWALIOR": (
+        "Madhya Pradesh",
+        "Gwalior",
+        ["Gwalior", "Bhitarwar", "Dabra", "Ghatigaon", "Morar"],
+    ),
+    "MP_UJJAIN": (
+        "Madhya Pradesh",
+        "Ujjain",
+        ["Ujjain", "Badnagar", "Khachrod", "Mahidpur", "Tarana"],
+    ),
     # Rajasthan
-    "RJ_JAIPUR": ("Rajasthan", "Jaipur", ["Jaipur", "Amber", "Bassi", "Chaksu", "Dudu", "Kotputli"]),
-    "RJ_JODHPUR": ("Rajasthan", "Jodhpur", ["Jodhpur", "Balesar", "Bap", "Bilara", "Luni", "Osian"]),
-    "RJ_KOTA": ("Rajasthan", "Kota", ["Kota", "Digod", "Kanwas", "Ladpura", "Ramganj Mandi"]),
-    "RJ_BIKANER": ("Rajasthan", "Bikaner", ["Bikaner", "Chhatargarh", "Kolayat", "Lunkaransar", "Nokha"]),
-    "RJ_AJMER": ("Rajasthan", "Ajmer", ["Ajmer", "Beawar", "Kekri", "Kishangarh", "Masuda", "Nasirabad"]),
-    
+    "RJ_JAIPUR": (
+        "Rajasthan",
+        "Jaipur",
+        ["Jaipur", "Amber", "Bassi", "Chaksu", "Dudu", "Kotputli"],
+    ),
+    "RJ_JODHPUR": (
+        "Rajasthan",
+        "Jodhpur",
+        ["Jodhpur", "Balesar", "Bap", "Bilara", "Luni", "Osian"],
+    ),
+    "RJ_KOTA": (
+        "Rajasthan",
+        "Kota",
+        ["Kota", "Digod", "Kanwas", "Ladpura", "Ramganj Mandi"],
+    ),
+    "RJ_BIKANER": (
+        "Rajasthan",
+        "Bikaner",
+        ["Bikaner", "Chhatargarh", "Kolayat", "Lunkaransar", "Nokha"],
+    ),
+    "RJ_AJMER": (
+        "Rajasthan",
+        "Ajmer",
+        ["Ajmer", "Beawar", "Kekri", "Kishangarh", "Masuda", "Nasirabad"],
+    ),
     # Maharashtra
     "MH_MUMBAI": ("Maharashtra", "Mumbai", ["Mumbai City", "Mumbai Suburban"]),
-    "MH_PUNE": ("Maharashtra", "Pune", ["Pune City", "Haveli", "Khed", "Maval", "Mulshi", "Purandar"]),
-    "MH_NAGPUR": ("Maharashtra", "Nagpur", ["Nagpur", "Hingna", "Kamptee", "Mauda", "Narkhed", "Parseoni"]),
-    "MH_AURANGABAD": ("Maharashtra", "Aurangabad", ["Aurangabad", "Gangapur", "Kannad", "Khuldabad", "Paithan"]),
-    "MH_NASHIK": ("Maharashtra", "Nashik", ["Nashik", "Dindori", "Igatpuri", "Kalwan", "Malegaon", "Nandgaon"]),
-    
+    "MH_PUNE": (
+        "Maharashtra",
+        "Pune",
+        ["Pune City", "Haveli", "Khed", "Maval", "Mulshi", "Purandar"],
+    ),
+    "MH_NAGPUR": (
+        "Maharashtra",
+        "Nagpur",
+        ["Nagpur", "Hingna", "Kamptee", "Mauda", "Narkhed", "Parseoni"],
+    ),
+    "MH_AURANGABAD": (
+        "Maharashtra",
+        "Aurangabad",
+        ["Aurangabad", "Gangapur", "Kannad", "Khuldabad", "Paithan"],
+    ),
+    "MH_NASHIK": (
+        "Maharashtra",
+        "Nashik",
+        ["Nashik", "Dindori", "Igatpuri", "Kalwan", "Malegaon", "Nandgaon"],
+    ),
     # West Bengal
     "WB_KOLKATA": ("West Bengal", "Kolkata", ["Kolkata"]),
-    "WB_HOWRAH": ("West Bengal", "Howrah", ["Howrah Sadar", "Bally Jagacha", "Domjur", "Panchla", "Sankrail", "Uluberia"]),
-    "WB_NORTH_24_PARGANAS": ("West Bengal", "North 24 Parganas", ["Barasat", "Barrackpore", "Basirhat", "Bongaon", "Habra"]),
-    "WB_SOUTH_24_PARGANAS": ("West Bengal", "South 24 Parganas", ["Alipore", "Baruipur", "Canning", "Diamond Harbour", "Kakdwip"]),
-    "WB_PASCHIM_MEDINIPUR": ("West Bengal", "Paschim Medinipur", ["Medinipur Sadar", "Ghatal", "Jhargram", "Kharagpur"]),
+    "WB_HOWRAH": (
+        "West Bengal",
+        "Howrah",
+        ["Howrah Sadar", "Bally Jagacha", "Domjur", "Panchla", "Sankrail", "Uluberia"],
+    ),
+    "WB_NORTH_24_PARGANAS": (
+        "West Bengal",
+        "North 24 Parganas",
+        ["Barasat", "Barrackpore", "Basirhat", "Bongaon", "Habra"],
+    ),
+    "WB_SOUTH_24_PARGANAS": (
+        "West Bengal",
+        "South 24 Parganas",
+        ["Alipore", "Baruipur", "Canning", "Diamond Harbour", "Kakdwip"],
+    ),
+    "WB_PASCHIM_MEDINIPUR": (
+        "West Bengal",
+        "Paschim Medinipur",
+        ["Medinipur Sadar", "Ghatal", "Jhargram", "Kharagpur"],
+    ),
 }
 
 # Training center types
@@ -101,8 +220,20 @@ SECTORS_TRADES = {
     ],
     "Electronics & Hardware": [
         ("ELE/Q3101", "LED Light Repair Technician", "एलईडी लाइट मरम्मत तकनीशियन", 4, 2),
-        ("ELE/Q3501", "Mobile Phone Hardware Repair Technician", "मोबाइल फोन हार्डवेयर मरम्मत", 4, 2),
-        ("ELE/Q4601", "Solar Panel Installation Technician", "सौर पैनल स्थापना तकनीशियन", 4, 1),
+        (
+            "ELE/Q3501",
+            "Mobile Phone Hardware Repair Technician",
+            "मोबाइल फोन हार्डवेयर मरम्मत",
+            4,
+            2,
+        ),
+        (
+            "ELE/Q4601",
+            "Solar Panel Installation Technician",
+            "सौर पैनल स्थापना तकनीशियन",
+            4,
+            1,
+        ),
         ("ELE/Q5901", "CCTV Installation Technician", "सीसीटीवी स्थापना तकनीशियन", 3, 1),
         ("ELE/Q6301", "Home Appliance Repair Technician", "घरेलू उपकरण मरम्मत", 3, 1),
     ],
@@ -114,7 +245,13 @@ SECTORS_TRADES = {
         ("BWS/Q0501", "Nail Technician", "नेल तकनीशियन", 3, 1),
     ],
     "Automotive": [
-        ("ASC/Q1401", "Automotive Service Technician (2/3 Wheeler)", "ऑटोमोटिव सर्विस तकनीशियन", 4, 1),
+        (
+            "ASC/Q1401",
+            "Automotive Service Technician (2/3 Wheeler)",
+            "ऑटोमोटिव सर्विस तकनीशियन",
+            4,
+            1,
+        ),
         ("ASC/Q1101", "Automotive Body Repair Technician", "ऑटोमोटिव बॉडी मरम्मत", 4, 2),
         ("ASC/Q1901", "Electric Vehicle Technician", "इलेक्ट्रिक वाहन तकनीशियन", 4, 3),
         ("ASC/Q2001", "Automotive Paint Technician", "ऑटोमोटिव पेंट तकनीशियन", 3, 1),
@@ -142,10 +279,22 @@ SECTORS_TRADES = {
         ("HSS/Q0101", "General Duty Assistant", "सामान्य ड्यूटी सहायक", 4, 1),
         ("HSS/Q0201", "Home Health Aide", "होम हेल्थ सहायक", 4, 1),
         ("HSS/Q0301", "Pharmacy Assistant", "फार्मेसी सहायक", 4, 2),
-        ("HSS/Q0401", "Emergency Medical Technician", "आपातकालीन चिकित्सा तकनीशियन", 4, 2),
+        (
+            "HSS/Q0401",
+            "Emergency Medical Technician",
+            "आपातकालीन चिकित्सा तकनीशियन",
+            4,
+            2,
+        ),
     ],
     "Tourism & Hospitality": [
-        ("THC/Q0101", "Food & Beverage Service Assistant", "खाद्य और पेय सेवा सहायक", 3, 1),
+        (
+            "THC/Q0101",
+            "Food & Beverage Service Assistant",
+            "खाद्य और पेय सेवा सहायक",
+            3,
+            1,
+        ),
         ("THC/Q0201", "Front Office Associate", "फ्रंट ऑफिस सहयोगी", 4, 2),
         ("THC/Q0301", "Housekeeping Assistant", "हाउसकीपिंग सहायक", 3, 0),
         ("THC/Q0401", "Tour Guide", "टूर गाइड", 4, 2),
@@ -163,34 +312,61 @@ STATE_DIALECTS = {
 }
 
 EDUCATION_LEVELS = ["none", "class_5", "class_8", "class_10", "class_12"]
-EDUCATION_TIER_MAP = {"none": 0, "class_5": 1, "class_8": 2, "class_10": 3, "class_12": 4}
+EDUCATION_TIER_MAP = {
+    "none": 0,
+    "class_5": 1,
+    "class_8": 2,
+    "class_10": 3,
+    "class_12": 4,
+}
 
 AGE_BRACKETS = ["18-25", "25-35", "35-45", "45-60", "60+"]
 EMPLOYMENT_INTENTS = ["WAGE", "SELF_EMPLOYMENT", "HYBRID"]
 
 TRADITIONAL_TRADES = [
-    "सिलाई / Tailoring", "कढ़ाई / Embroidery", "बढ़ई / Carpentry",
-    "लोहार / Blacksmith", "कुम्हार / Pottery", "चमड़ा कार्य / Leather Work",
-    "बांस शिल्प / Bamboo Craft", "जूट शिल्प / Jute Craft", "हथकरघा बुनाई / Handloom Weaving",
-    "खेती / Farming", "पशुपालन / Animal Husbandry", "मछली पालन / Fishery",
-    "ब्यूटी पार्लर / Beauty Parlor", "मेहंदी डिजाइन / Mehndi Design",
-    "मोबाइल मरम्मत / Mobile Repair", "इलेक्ट्रीशियन / Electrician",
-    "प्लंबर / Plumber", "वेल्डिंग / Welding", "पेंटिंग / Painting",
-    "ड्राइविंग / Driving", "कंप्यूटर / Computer", "अकाउंटिंग / Accounting",
+    "सिलाई / Tailoring",
+    "कढ़ाई / Embroidery",
+    "बढ़ई / Carpentry",
+    "लोहार / Blacksmith",
+    "कुम्हार / Pottery",
+    "चमड़ा कार्य / Leather Work",
+    "बांस शिल्प / Bamboo Craft",
+    "जूट शिल्प / Jute Craft",
+    "हथकरघा बुनाई / Handloom Weaving",
+    "खेती / Farming",
+    "पशुपालन / Animal Husbandry",
+    "मछली पालन / Fishery",
+    "ब्यूटी पार्लर / Beauty Parlor",
+    "मेहंदी डिजाइन / Mehndi Design",
+    "मोबाइल मरम्मत / Mobile Repair",
+    "इलेक्ट्रीशियन / Electrician",
+    "प्लंबर / Plumber",
+    "वेल्डिंग / Welding",
+    "पेंटिंग / Painting",
+    "ड्राइविंग / Driving",
+    "कंप्यूटर / Computer",
+    "अकाउंटिंग / Accounting",
 ]
 
 CURRENT_ACTIVITIES = [
-    "गृहिणी / Homemaker", "किसान / Farmer", "मजदूर / Laborer",
-    "छोटा दुकानदार / Small Shopkeeper", "बेरोजगार / Unemployed",
-    "छात्र / Student", "पारिवारिक व्यवसाय में सहायता / Helping in Family Business",
-    "मनरेगा श्रमिक / MGNREGA Worker", "आंगनवाड़ी कार्यकर्ता / Anganwadi Worker",
-    "आशा कार्यकर्ता / ASHA Worker", "स्वयं सहायता समूह सदस्य / SHG Member",
+    "गृहिणी / Homemaker",
+    "किसान / Farmer",
+    "मजदूर / Laborer",
+    "छोटा दुकानदार / Small Shopkeeper",
+    "बेरोजगार / Unemployed",
+    "छात्र / Student",
+    "पारिवारिक व्यवसाय में सहायता / Helping in Family Business",
+    "मनरेगा श्रमिक / MGNREGA Worker",
+    "आंगनवाड़ी कार्यकर्ता / Anganwadi Worker",
+    "आशा कार्यकर्ता / ASHA Worker",
+    "स्वयं सहायता समूह सदस्य / SHG Member",
 ]
 
 
-def generate_embedding(seed: float) -> List[float]:
+def generate_embedding(seed: float) -> list[float]:
     """Generate a normalized 768-dim embedding vector (deterministic for reproducibility)."""
     import math
+
     vec = []
     sum_sq = 0.0
     for i in range(768):
@@ -201,7 +377,7 @@ def generate_embedding(seed: float) -> List[float]:
     return [v / norm for v in vec]
 
 
-def create_phone_hash(phone_number: str, salt: str = None) -> tuple:
+def create_phone_hash(phone_number: str, salt: str | None = None) -> tuple:
     """Create salted SHA-256 hash of phone number."""
     if salt is None:
         salt = secrets.token_hex(32)
@@ -219,19 +395,19 @@ def create_phone_hash(phone_number: str, salt: str = None) -> tuple:
     return hash_obj.hexdigest(), salt
 
 
-async def seed_training_centers(db) -> List[Dict]:
+async def seed_training_centers(db) -> list[dict]:
     """Create training centers/kiosks across all districts."""
     centers = []
     center_id = 1
-    
+
     for district_code, (state, district_name, blocks) in DISTRICTS.items():
         # Create 3-5 centers per district
         num_centers = random.randint(3, 5)
-        
+
         for i in range(num_centers):
             block = random.choice(blocks)
             center_type = random.choice(CENTER_TYPES)
-            
+
             # Generate center name
             if "Kiosk" in center_type:
                 name = f"PM-AJAY Kiosk {district_name} - {block}"
@@ -243,11 +419,11 @@ async def seed_training_centers(db) -> List[Dict]:
                 name = f"RSETI {district_name}"
             else:
                 name = f"{center_type} {district_name} - {block}"
-            
+
             # Sectors this center offers (2-4 sectors)
             num_sectors = random.randint(2, 4)
             center_sectors = random.sample(list(SECTORS_TRADES.keys()), num_sectors)
-            
+
             center = {
                 "center_id": f"TC_{center_id:05d}",
                 "name": name,
@@ -261,28 +437,48 @@ async def seed_training_centers(db) -> List[Dict]:
                 "contact_phone": f"+91{random.randint(7000000000, 9999999999)}",
                 "contact_email": f"{name.lower().replace(' ', '').replace('-', '')}@pm-ajay.gov.in",
                 "sectors_offered": center_sectors,
-                "facilities": random.sample([
-                    "Computer Lab", "Workshop", "Classroom", "Hostel", "Canteen",
-                    "Library", "Placement Cell", "Counseling Room", "Practical Lab",
-                    "Digital Literacy Lab", "Women's Rest Room", "Accessible Ramp"
-                ], k=random.randint(3, 7)),
+                "facilities": random.sample(
+                    [
+                        "Computer Lab",
+                        "Workshop",
+                        "Classroom",
+                        "Hostel",
+                        "Canteen",
+                        "Library",
+                        "Placement Cell",
+                        "Counseling Room",
+                        "Practical Lab",
+                        "Digital Literacy Lab",
+                        "Women's Rest Room",
+                        "Accessible Ramp",
+                    ],
+                    k=random.randint(3, 7),
+                ),
                 "capacity_per_batch": random.randint(20, 60),
                 "num_trainers": random.randint(3, 12),
-                "accreditation": random.choice(["NCVT", "SCVT", "NSQF Aligned", "PMKVY Affiliated"]),
+                "accreditation": random.choice(
+                    ["NCVT", "SCVT", "NSQF Aligned", "PMKVY Affiliated"]
+                ),
                 "operating_hours": "9:00 AM - 5:00 PM",
                 "working_days": "Monday - Saturday",
                 "has_hostel": random.choice([True, False]),
-                "hostel_capacity": random.randint(0, 50) if random.choice([True, False]) else 0,
+                "hostel_capacity": random.randint(0, 50)
+                if random.choice([True, False])
+                else 0,
                 "transport_available": random.choice([True, False]),
-                "latitude": round(random.uniform(20.0, 30.0), 6) if state in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"] else round(random.uniform(15.0, 25.0), 6),
-                "longitude": round(random.uniform(75.0, 90.0), 6) if state in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"] else round(random.uniform(72.0, 88.0), 6),
+                "latitude": round(random.uniform(20.0, 30.0), 6)
+                if state in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"]
+                else round(random.uniform(15.0, 25.0), 6),
+                "longitude": round(random.uniform(75.0, 90.0), 6)
+                if state in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"]
+                else round(random.uniform(72.0, 88.0), 6),
                 "status": "ACTIVE",
                 "created_at": datetime.now(timezone.utc),
                 "updated_at": datetime.now(timezone.utc),
             }
             centers.append(center)
             center_id += 1
-    
+
     # Insert into database
     if centers:
         await db.training_centers.delete_many({})
@@ -294,16 +490,18 @@ async def seed_training_centers(db) -> List[Dict]:
         await db.training_centers.create_index([("sectors_offered", ASCENDING)])
         await db.training_centers.create_index([("status", ASCENDING)])
         await db.training_centers.create_index([("name", TEXT)])
-    
-    print(f"✅ Created {len(centers)} training centers across {len(DISTRICTS)} districts")
+
+    print(
+        f"✅ Created {len(centers)} training centers across {len(DISTRICTS)} districts"
+    )
     return centers
 
 
-async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
+async def seed_courses(db, training_centers: list[dict]) -> list[dict]:
     """Create diverse NSQF courses mapped to training centers."""
     courses = []
     course_seed = 1.0
-    
+
     # Map each center to courses in its sectors
     for center in training_centers:
         center_courses = []
@@ -314,48 +512,106 @@ async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
             # Pick 1-2 trades per sector per center
             num_trades = min(len(trades), random.randint(1, 2))
             selected_trades = random.sample(trades, num_trades)
-            
-            for qp_code, course_name, course_name_indic, nsqf_level, min_edu_tier in selected_trades:
+
+            for (
+                qp_code,
+                course_name,
+                course_name_indic,
+                nsqf_level,
+                min_edu_tier,
+            ) in selected_trades:
                 # Generate course embedding
                 course_embedding = generate_embedding(course_seed)
                 course_seed += 1.0
-                
+
                 # Stipend varies by NSQF level
-                base_stipend = {1: 1000, 2: 1200, 3: 1500, 4: 1800, 5: 2200, 6: 2500, 7: 2800, 8: 3000}
+                base_stipend = {
+                    1: 1000,
+                    2: 1200,
+                    3: 1500,
+                    4: 1800,
+                    5: 2200,
+                    6: 2500,
+                    7: 2800,
+                    8: 3000,
+                }
                 stipend = base_stipend.get(nsqf_level, 1500)
-                
+
                 # Duration varies
                 duration = random.randint(200, 500)
-                
+
                 # Pathway type
-                pathway = random.choice([
-                    "VOCATIONAL_TRAINING", "VOCATIONAL_TRAINING", "VOCATIONAL_TRAINING",
-                    "RPL_CERTIFICATION", "EDP_ENTREPRENEURSHIP"
-                ])
-                
+                pathway = random.choice(
+                    [
+                        "VOCATIONAL_TRAINING",
+                        "VOCATIONAL_TRAINING",
+                        "VOCATIONAL_TRAINING",
+                        "RPL_CERTIFICATION",
+                        "EDP_ENTREPRENEURSHIP",
+                    ]
+                )
+
                 # Target occupations for better matching
                 target_occupations = []
                 if "Tailor" in course_name or "Sewing" in course_name:
-                    target_occupations = ["सिलाई", "टेलर", "दर्जी", "tailoring", "stitching"]
+                    target_occupations = [
+                        "सिलाई",
+                        "टेलर",
+                        "दर्जी",
+                        "tailoring",
+                        "stitching",
+                    ]
                 elif "Embroiderer" in course_name or "Embroidery" in course_name:
-                    target_occupations = ["कढ़ाई", "कसीदाकारी", "embroidery", "needlework"]
+                    target_occupations = [
+                        "कढ़ाई",
+                        "कसीदाकारी",
+                        "embroidery",
+                        "needlework",
+                    ]
                 elif "Mason" in course_name:
                     target_occupations = ["राजमिस्त्री", "मेसन", "masonry", "construction"]
                 elif "Electrician" in course_name or "Electrical" in course_name:
                     target_occupations = ["इलेक्ट्रीशियन", "विद्युत", "electrical", "wiring"]
                 elif "Beauty" in course_name or "Beautician" in course_name:
-                    target_occupations = ["ब्यूटीशियन", "ब्यूटी पार्लर", "beauty", "parlor", "makeup"]
+                    target_occupations = [
+                        "ब्यूटीशियन",
+                        "ब्यूटी पार्लर",
+                        "beauty",
+                        "parlor",
+                        "makeup",
+                    ]
                 elif "Mobile" in course_name:
-                    target_occupations = ["मोबाइल मरम्मत", "mobile repair", "phone repair"]
+                    target_occupations = [
+                        "मोबाइल मरम्मत",
+                        "mobile repair",
+                        "phone repair",
+                    ]
                 elif "Solar" in course_name:
-                    target_occupations = ["सौर ऊर्जा", "solar", "solar panel", "renewable energy"]
+                    target_occupations = [
+                        "सौर ऊर्जा",
+                        "solar",
+                        "solar panel",
+                        "renewable energy",
+                    ]
                 elif "Data Entry" in course_name or "IT" in sector:
-                    target_occupations = ["कंप्यूटर", "डेटा एंट्री", "computer", "data entry", "typing"]
+                    target_occupations = [
+                        "कंप्यूटर",
+                        "डेटा एंट्री",
+                        "computer",
+                        "data entry",
+                        "typing",
+                    ]
                 elif "Dairy" in course_name or "Poultry" in course_name:
-                    target_occupations = ["डेयरी", "पशुपालन", "poultry", "dairy", "animal husbandry"]
+                    target_occupations = [
+                        "डेयरी",
+                        "पशुपालन",
+                        "poultry",
+                        "dairy",
+                        "animal husbandry",
+                    ]
                 else:
                     target_occupations = [course_name.lower()]
-                
+
                 course = {
                     "qp_code": qp_code,
                     "course_name": course_name,
@@ -363,7 +619,9 @@ async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
                     "sector": sector,
                     "nsqf_level": nsqf_level,
                     "min_education_tier": min_edu_tier,
-                    "is_residential": random.choice([False, False, False, True]),  # 75% non-residential
+                    "is_residential": random.choice(
+                        [False, False, False, True]
+                    ),  # 75% non-residential
                     "district_availability": [center["district_code"]],
                     "duration_hours": duration,
                     "stipend_per_month": stipend,
@@ -373,7 +631,11 @@ async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
                     "training_partners": [center["name"]],
                     "pathway_type": pathway,
                     "target_occupations": target_occupations,
-                    "tags": [sector.lower().replace(" ", "_"), center["state"].lower(), center["district_name"].lower()],
+                    "tags": [
+                        sector.lower().replace(" ", "_"),
+                        center["state"].lower(),
+                        center["district_name"].lower(),
+                    ],
                     "status": "ACTIVE",
                     "course_embedding": course_embedding,
                     "created_at": datetime.now(timezone.utc),
@@ -386,13 +648,15 @@ async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
                 }
                 center_courses.append(course)
                 courses.append(course)
-    
+
     # Insert into database
     if courses:
         await db.nsqf_courses.delete_many({})
         await db.nsqf_courses.insert_many(courses)
         # Create indexes
-        await db.nsqf_courses.create_index([("qp_code", ASCENDING), ("training_center_id", ASCENDING)], unique=True)
+        await db.nsqf_courses.create_index(
+            [("qp_code", ASCENDING), ("training_center_id", ASCENDING)], unique=True
+        )
         await db.nsqf_courses.create_index([("qp_code", ASCENDING)])
         await db.nsqf_courses.create_index([("district_availability", ASCENDING)])
         await db.nsqf_courses.create_index([("sector", ASCENDING)])
@@ -401,36 +665,38 @@ async def seed_courses(db, training_centers: List[Dict]) -> List[Dict]:
         await db.nsqf_courses.create_index([("nsqf_level", ASCENDING)])
         await db.nsqf_courses.create_index([("training_center_id", ASCENDING)])
         await db.nsqf_courses.create_index([("target_occupations", ASCENDING)])
-        await db.nsqf_courses.create_index([("course_name", TEXT), ("course_name_indic", TEXT)])
-    
+        await db.nsqf_courses.create_index(
+            [("course_name", TEXT), ("course_name_indic", TEXT)]
+        )
+
     print(f"✅ Created {len(courses)} courses across all training centers")
     return courses
 
 
-async def seed_beneficiaries(db) -> List[Dict]:
+async def seed_beneficiaries(db) -> list[dict]:
     """Create sample beneficiaries for testing."""
     beneficiaries = []
-    
+
     # Generate 50 sample beneficiaries across districts
     for i in range(50):
         district_code = random.choice(list(DISTRICTS.keys()))
-        state, district_name, blocks = DISTRICTS[district_code]
+        state, _district_name, blocks = DISTRICTS[district_code]
         block = random.choice(blocks)
         dialect = random.choice(STATE_DIALECTS.get(state, ["hindi_mixed"]))
         education_level = random.choice(EDUCATION_LEVELS)
         education_tier = EDUCATION_TIER_MAP[education_level]
-        
+
         # Phone number
         phone = f"+91{random.randint(6000000000, 9999999999)}"
         phone_hash, salt = create_phone_hash(phone)
-        
+
         # Profiling
         trade = random.choice(TRADITIONAL_TRADES)
         activity = random.choice(CURRENT_ACTIVITIES)
         mobility = random.randint(5, 30)
         intent = random.choice(EMPLOYMENT_INTENTS)
         prior_exp = random.choice([True, False])
-        
+
         beneficiary = {
             "phone_hash": phone_hash,
             "salt": salt,
@@ -473,7 +739,7 @@ async def seed_beneficiaries(db) -> List[Dict]:
             "dpiu_prefill_status": None,
         }
         beneficiaries.append(beneficiary)
-    
+
     # Insert into database
     if beneficiaries:
         await db.beneficiaries.delete_many({})
@@ -483,34 +749,42 @@ async def seed_beneficiaries(db) -> List[Dict]:
         await db.beneficiaries.create_index([("demographics.district_code", ASCENDING)])
         await db.beneficiaries.create_index([("detected_dialect", ASCENDING)])
         await db.beneficiaries.create_index([("created_at", ASCENDING)])
-    
+
     print(f"✅ Created {len(beneficiaries)} sample beneficiaries")
     return beneficiaries
 
 
-async def seed_kiosks(db) -> List[Dict]:
+async def seed_kiosks(db) -> list[dict]:
     """Create PM-AJAY kiosks (lightweight access points) at panchayat level."""
     kiosks = []
     kiosk_id = 1
-    
+
     # Create kiosks in a subset of blocks (not every block)
     for district_code, (state, district_name, blocks) in DISTRICTS.items():
         # Select ~40% of blocks for kiosks
         selected_blocks = random.sample(blocks, k=max(1, int(len(blocks) * 0.4)))
-        
+
         for block in selected_blocks:
             # 1-2 kiosks per block
             num_kiosks = random.randint(1, 2)
             for j in range(num_kiosks):
                 kiosk = {
                     "kiosk_id": f"KIOSK_{kiosk_id:05d}",
-                    "name": f"PM-AJAY Kiosk {block} - {j+1}",
+                    "name": f"PM-AJAY Kiosk {block} - {j + 1}",
                     "district_code": district_code,
                     "district_name": district_name,
                     "block_name": block,
                     "state": state,
                     "panchayat_name": f"{block} Panchayat",
-                    "location_type": random.choice(["CSC (Common Service Center)", "Panchayat Bhawan", "Library", "Community Hall", "Self Help Group Office"]),
+                    "location_type": random.choice(
+                        [
+                            "CSC (Common Service Center)",
+                            "Panchayat Bhawan",
+                            "Library",
+                            "Community Hall",
+                            "Self Help Group Office",
+                        ]
+                    ),
                     "address": f"{block} Panchayat Bhawan, {block}, {district_name}, {state}",
                     "pincode": f"{random.randint(100000, 999999)}",
                     "vle_name": f"VLE {random.randint(1000, 9999)}",  # Village Level Entrepreneur
@@ -525,26 +799,40 @@ async def seed_kiosks(db) -> List[Dict]:
                         "Status Tracking",
                         "Voice Assistant Access",
                     ],
-                    "equipment": ["Computer", "Webcam", "Microphone", "Speaker", "Printer", "Scanner", "Biometric Device"],
+                    "equipment": [
+                        "Computer",
+                        "Webcam",
+                        "Microphone",
+                        "Speaker",
+                        "Printer",
+                        "Scanner",
+                        "Biometric Device",
+                    ],
                     "internet_type": random.choice(["Broadband", "4G Dongle", "VSAT"]),
                     "operating_hours": "9:00 AM - 6:00 PM",
                     "working_days": "Monday - Saturday",
-                    "latitude": round(random.uniform(20.0, 30.0), 6) if state in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"] else round(random.uniform(15.0, 25.0), 6),
-                    "longitude": round(random.uniform(75.0, 90.0), 6) if state in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"] else round(random.uniform(72.0, 88.0), 6),
+                    "latitude": round(random.uniform(20.0, 30.0), 6)
+                    if state
+                    in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"]
+                    else round(random.uniform(15.0, 25.0), 6),
+                    "longitude": round(random.uniform(75.0, 90.0), 6)
+                    if state
+                    in ["Uttar Pradesh", "Bihar", "Madhya Pradesh", "Rajasthan"]
+                    else round(random.uniform(72.0, 88.0), 6),
                     "status": "ACTIVE",
                     "created_at": datetime.now(timezone.utc),
                     "updated_at": datetime.now(timezone.utc),
                 }
                 kiosks.append(kiosk)
                 kiosk_id += 1
-    
+
     if kiosks:
         await db.kiosks.delete_many({})
         await db.kiosks.insert_many(kiosks)
         await db.kiosks.create_index([("district_code", ASCENDING)])
         await db.kiosks.create_index([("block_name", ASCENDING)])
         await db.kiosks.create_index([("status", ASCENDING)])
-    
+
     print(f"✅ Created {len(kiosks)} PM-AJAY kiosks across districts")
     return kiosks
 
@@ -554,19 +842,21 @@ async def main():
     # MongoDB connection
     MONGODB_URL = "mongodb://localhost:27017"
     DATABASE = "pm_ajay"
-    
+
     client = AsyncIOMotorClient(MONGODB_URL)
     db = client[DATABASE]
-    
+
     print("🌱 Starting PM-AJAY mock data seeding...")
-    print(f"📍 Target: {len(DISTRICTS)} districts across {len(set(d[0] for d in DISTRICTS.values()))} states")
-    
+    print(
+        f"📍 Target: {len(DISTRICTS)} districts across {len({d[0] for d in DISTRICTS.values()})} states"
+    )
+
     # Seed data
     training_centers = await seed_training_centers(db)
     courses = await seed_courses(db, training_centers)
     beneficiaries = await seed_beneficiaries(db)
     kiosks = await seed_kiosks(db)
-    
+
     # Summary
     print("\n📊 Seeding Summary:")
     print(f"   Training Centers: {len(training_centers)}")
@@ -574,7 +864,7 @@ async def main():
     print(f"   Beneficiaries: {len(beneficiaries)}")
     print(f"   Kiosks: {len(kiosks)}")
     print(f"   Districts Covered: {len(DISTRICTS)}")
-    
+
     # Sector distribution
     sector_counts = {}
     for course in courses:
@@ -583,7 +873,7 @@ async def main():
     print("\n📚 Courses by Sector:")
     for sector, count in sorted(sector_counts.items()):
         print(f"   {sector}: {count}")
-    
+
     # State distribution
     state_counts = {}
     for center in training_centers:
@@ -592,7 +882,7 @@ async def main():
     print("\n🏛️  Centers by State:")
     for state, count in sorted(state_counts.items()):
         print(f"   {state}: {count}")
-    
+
     print("\n✅ Mock data seeding completed successfully!")
     client.close()
 

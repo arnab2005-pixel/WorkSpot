@@ -5,7 +5,7 @@ Idempotently configures unique, compound, text, and TTL indexes across all Mongo
 """
 
 import logging
-from typing import Dict, List, Any
+
 from pymongo import ASCENDING, DESCENDING, TEXT
 from pymongo.errors import PyMongoError
 
@@ -14,7 +14,7 @@ from .mongo_client import MongoDBClient, get_mongo_client
 logger = logging.getLogger(__name__)
 
 
-async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
+async def ensure_indexes(client: MongoDBClient = None) -> dict[str, list[str]]:
     """
     Create or verify all necessary indexes across the PM-AJAY collections.
     Returns a dictionary mapping collection name to list of confirmed index names.
@@ -25,7 +25,7 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
         logger.warning("MongoDB not connected. Skipping index creation.")
         return {}
 
-    created_indexes: Dict[str, List[str]] = {}
+    created_indexes: dict[str, list[str]] = {}
 
     try:
         # ==========================================
@@ -33,8 +33,14 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
         # ==========================================
         b_col = client.beneficiaries
         b_idxs = [
-            ([("phone_hash", ASCENDING)], {"unique": True, "name": "idx_phone_hash_unique"}),
-            ([("demographics.district_code", ASCENDING)], {"name": "idx_district_code"}),
+            (
+                [("phone_hash", ASCENDING)],
+                {"unique": True, "name": "idx_phone_hash_unique"},
+            ),
+            (
+                [("demographics.district_code", ASCENDING)],
+                {"name": "idx_district_code"},
+            ),
             ([("created_at", DESCENDING)], {"name": "idx_created_at_desc"}),
             (
                 [
@@ -89,9 +95,18 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
         # ==========================================
         s_col = client.call_sessions
         s_idxs = [
-            ([("session_id", ASCENDING)], {"unique": True, "name": "idx_session_id_unique"}),
-            ([("phone_hash", ASCENDING), ("start_time", DESCENDING)], {"name": "idx_phone_history_compound"}),
-            ([("start_time", ASCENDING)], {"expireAfterSeconds": 7776000, "name": "idx_ttl_90_days"}),  # 90 days
+            (
+                [("session_id", ASCENDING)],
+                {"unique": True, "name": "idx_session_id_unique"},
+            ),
+            (
+                [("phone_hash", ASCENDING), ("start_time", DESCENDING)],
+                {"name": "idx_phone_history_compound"},
+            ),
+            (
+                [("start_time", ASCENDING)],
+                {"expireAfterSeconds": 7776000, "name": "idx_ttl_90_days"},
+            ),  # 90 days
         ]
         created_indexes["call_sessions"] = []
         for keys, kwargs in s_idxs:
@@ -106,7 +121,10 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
         # ==========================================
         d_col = client.lgd_districts
         d_idxs = [
-            ([("district_code", ASCENDING)], {"unique": True, "name": "idx_lgd_district_code"}),
+            (
+                [("district_code", ASCENDING)],
+                {"unique": True, "name": "idx_lgd_district_code"},
+            ),
             ([("aliases", ASCENDING)], {"name": "idx_lgd_aliases"}),
         ]
         created_indexes["lgd_districts"] = []
@@ -122,8 +140,14 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
         # ==========================================
         app_col = client.dpiu_applications
         app_idxs = [
-            ([("application_id", ASCENDING)], {"unique": True, "name": "idx_dpiu_app_id"}),
-            ([("district_code", ASCENDING), ("status", ASCENDING)], {"name": "idx_dpiu_district_status"}),
+            (
+                [("application_id", ASCENDING)],
+                {"unique": True, "name": "idx_dpiu_app_id"},
+            ),
+            (
+                [("district_code", ASCENDING), ("status", ASCENDING)],
+                {"name": "idx_dpiu_district_status"},
+            ),
         ]
         created_indexes["dpiu_applications"] = []
         for keys, kwargs in app_idxs:
@@ -131,11 +155,15 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
                 name = await app_col.create_index(keys, **kwargs)
                 created_indexes["dpiu_applications"].append(name)
             except PyMongoError as e:
-                logger.debug(f"Index {kwargs.get('name')} notice on dpiu_applications: {e}")
+                logger.debug(
+                    f"Index {kwargs.get('name')} notice on dpiu_applications: {e}"
+                )
 
-        logger.info(f"Database indexes verified across {len(created_indexes)} collections.")
+        logger.info(
+            f"Database indexes verified across {len(created_indexes)} collections."
+        )
         return created_indexes
 
-    except Exception as exc:
-        logger.exception("Error ensuring MongoDB indexes: %s", exc)
+    except Exception:
+        logger.exception("Error ensuring MongoDB indexes")
         return created_indexes
