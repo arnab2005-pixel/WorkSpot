@@ -42,11 +42,14 @@ app.get<{ Params: { sessionId: string } }>("/recommendations/:sessionId", async 
 
 app.post("/followup/schedule", async () => ({ scheduled: true, message: "A district desk follow-up can be scheduled here." }));
 
-app.get("/tts/:lang/:promptId", async (request) => ({ cached: true, ...request.params }));
+app.get<{ Params: { lang: string; promptId: string } }>(
+  "/tts/:lang/:promptId",
+  async (request) => ({ cached: true, ...request.params })
+);
 app.post("/tts/dynamic", async () => ({ queued: true }));
 
 app.get("/interview", { websocket: true }, (socket) => {
-  socket.on("message", (raw) => {
+  socket.on("message", (raw: Buffer) => {
     try {
       const message = JSON.parse(raw.toString()) as { type: string };
       socket.send(JSON.stringify({ type: "ack", received: message.type, serverTime: new Date().toISOString() }));
