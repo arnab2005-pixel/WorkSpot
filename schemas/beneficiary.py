@@ -5,7 +5,7 @@ These models represent the beneficiary profile stored in MongoDB.
 All sensitive data (phone numbers) are stored as salted hashes.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict, field_validator
 import hashlib
@@ -45,6 +45,16 @@ class Demographics(BaseModel):
     education_level: str = Field(
         ..., 
         description="e.g., 'none', 'class_5', 'class_8', 'class_10'"
+    )
+    education_tier: int = Field(
+        default=0,
+        description="Mapped education tier: 0=None, 1=Class 5, 2=Class 8, 3=Class 10, 4=Class 12+",
+        ge=0,
+        le=4
+    )
+    caste_category: Optional[str] = Field(
+        default="SCHEDULED_CASTE",
+        description="Beneficiary caste/social category for PM-AJAY eligibility"
     )
 
 
@@ -123,6 +133,18 @@ class ConsentAudit(BaseModel):
         default="hi",
         description="Language in which consent was given"
     )
+    purpose: str = Field(
+        default="PM-AJAY Vocational Discovery & Livelihood Scheme Matching",
+        description="Specified purpose of processing under DPDP Act 2023"
+    )
+    consent_withdrawn: bool = Field(
+        default=False,
+        description="Whether consent has been revoked by data principal"
+    )
+    withdrawal_timestamp: Optional[datetime] = Field(
+        default=None,
+        description="Timestamp of consent withdrawal"
+    )
 
 
 class BeneficiaryRecord(BaseModel):
@@ -188,8 +210,8 @@ class BeneficiaryRecord(BaseModel):
     consent_audit: ConsentAudit
     
     # Metadata
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_call_at: Optional[datetime] = None
     total_calls: int = Field(default=0, ge=0)
     

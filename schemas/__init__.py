@@ -36,6 +36,21 @@ from .beneficiary_profile import (
     LLMIntakePayload,
 )
 
+from .call_session import (
+    CallSessionRecord,
+    TurnRecord,
+    TurnLatencyBreakdown,
+    CallLatencyMetrics,
+)
+
+from .lgd_district import (
+    LgdDistrictRecord,
+)
+
+from .dpiu_application import (
+    DpiuApplicationRecord,
+)
+
 from .websocket_events import (
     WSMessageType,
     WSIncomingMessage,
@@ -70,6 +85,14 @@ __all__ = [
     "FSMState",
     "SlotStatus",
     "ExtractedSlots",
+    # Persistent Call Session
+    "CallSessionRecord",
+    "TurnRecord",
+    "TurnLatencyBreakdown",
+    "CallLatencyMetrics",
+    # Master LGD & DPIU
+    "LgdDistrictRecord",
+    "DpiuApplicationRecord",
     # Enterprise Profiling
     "EnterpriseAspirations",
     "ProfileSlots",

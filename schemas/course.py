@@ -7,7 +7,7 @@ for semantic search via Atlas Vector Search.
 
 from typing import Optional, List, Literal
 from pydantic import BaseModel, Field, ConfigDict
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 class CourseDocument(BaseModel):
@@ -116,12 +116,28 @@ class CourseDocument(BaseModel):
         default="ACTIVE",
         description="Course availability status"
     )
+    training_center: Optional[str] = Field(
+        default=None,
+        description="Primary training center location name"
+    )
     training_partners: List[str] = Field(
         default_factory=list, 
         description="Names of training centers/partners offering this course"
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    pathway_type: Literal["VOCATIONAL_TRAINING", "RPL_CERTIFICATION", "EDP_ENTREPRENEURSHIP"] = Field(
+        default="VOCATIONAL_TRAINING",
+        description="PM-AJAY pathway: standard training, RPL certification, or EDP incubation"
+    )
+    target_occupations: List[str] = Field(
+        default_factory=list,
+        description="Colloquial trade and occupation keywords in Hindi/English"
+    )
+    tags: List[str] = Field(
+        default_factory=list,
+        description="Search indexing tags"
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     
     # Additional metadata for filtering
     gender_preference: Optional[Literal["ANY", "MALE", "FEMALE", "TRANSGENDER"]] = Field(
