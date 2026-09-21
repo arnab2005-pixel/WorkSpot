@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional, Tuple, Union
+
 import numpy as np
 
 from config.config import get_settings
@@ -24,6 +24,7 @@ settings = get_settings()
 @dataclass
 class TranscriptionResult:
     """ASR Transcription Result with hallucination diagnostics."""
+
     text: str
     language: str
     confidence: float
@@ -32,7 +33,7 @@ class TranscriptionResult:
     compression_ratio: float
     avg_logprob: float
     is_hallucinated: bool
-    fallback_prompt_indic: Optional[str] = None
+    fallback_prompt_indic: str | None = None
 
 
 class WhisperASRWorker:
@@ -42,10 +43,10 @@ class WhisperASRWorker:
 
     def __init__(
         self,
-        model_size: Optional[str] = None,
-        device: Optional[str] = None,
-        compute_type: Optional[str] = None,
-        biasing_prompt: Optional[str] = None,
+        model_size: str | None = None,
+        device: str | None = None,
+        compute_type: str | None = None,
+        biasing_prompt: str | None = None,
     ):
         self.model_size = model_size or settings.whisper_model_size
         self.biasing_prompt = biasing_prompt or settings.whisper_prompt
@@ -63,6 +64,7 @@ class WhisperASRWorker:
         """Initialize faster-whisper WhisperModel with automatic fallback to CPU."""
         try:
             from faster_whisper import WhisperModel
+
             try:
                 logger.info(
                     f"Loading WhisperModel({self.model_size}, device={device}, compute_type={compute_type})"
@@ -73,7 +75,7 @@ class WhisperASRWorker:
                     compute_type=compute_type,
                 )
                 logger.info("WhisperModel loaded successfully on requested device.")
-            except Exception as cuda_err:
+            except Exception as cuda_err:  # noqa: BLE001 - Whisper model failure must use fallback
                 logger.warning(
                     f"Failed to load Whisper on {device} ({cuda_err}). Falling back to CPU int8."
                 )
@@ -83,8 +85,10 @@ class WhisperASRWorker:
                     compute_type="int8",
                 )
                 logger.info("WhisperModel loaded on CPU fallback.")
-        except Exception as e:
-            logger.warning(f"faster-whisper not available or model load failed: {e}. Running in mock/fallback mode.")
+        except Exception as e:  # noqa: BLE001 - Whisper model failure must use fallback
+            logger.warning(
+                f"faster-whisper not available or model load failed: {e}. Running in mock/fallback mode."
+            )
             self.model = None
 
     def _transcribe_sync(self, audio: np.ndarray) -> TranscriptionResult:
@@ -138,9 +142,14 @@ class WhisperASRWorker:
             # Check for hallucination
             is_hallucinated = False
             fallback_prompt = None
-            if avg_compression > self.compression_ratio_threshold or avg_logprob < self.avg_logprob_threshold:
+            if (
+                avg_compression > self.compression_ratio_threshold
+                or avg_logprob < self.avg_logprob_threshold
+            ):
                 is_hallucinated = True
-                fallback_prompt = "माफ़ कीजियेगा, आवाज़ साफ़ नहीं आई। कृपया अपनी बात दोबारा कहें।"
+                fallback_prompt = (
+                    "माफ़ कीजियेगा, आवाज़ साफ़ नहीं आई। कृपया अपनी बात दोबारा कहें।"
+                )
                 logger.warning(
                     f"Hallucination detected! text='{full_text}' "
                     f"compression={avg_compression:.2f}>{self.compression_ratio_threshold} "
@@ -162,8 +171,8 @@ class WhisperASRWorker:
                 fallback_prompt_indic=fallback_prompt,
             )
 
-        except Exception as e:
-            logger.error(f"Error during Whisper transcription: {e}", exc_info=True)
+        except Exception:
+            logger.exception("Error during Whisper transcription")
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             return TranscriptionResult(
                 text="",
@@ -179,12 +188,12 @@ class WhisperASRWorker:
 
     async def transcribe(
         self,
-        audio_data: Union[bytes, np.ndarray],
+        audio_data: bytes | np.ndarray,
         sample_rate: int = 16000,
     ) -> TranscriptionResult:
         """
         Asynchronous transcription of 16kHz audio.
-        
+
         Args:
             audio_data: 16kHz mono audio as raw 16-bit PCM bytes or float32 np.ndarray
             sample_rate: Sample rate (must be 16000)

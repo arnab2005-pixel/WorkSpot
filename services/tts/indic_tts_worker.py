@@ -10,9 +10,10 @@ Implements:
 import asyncio
 import logging
 import time
-from typing import AsyncGenerator, Optional, List
-import numpy as np
+from collections.abc import AsyncGenerator
+
 import httpx
+import numpy as np
 
 from config.config import get_settings
 from services.audio.resampler import AudioResampler
@@ -33,7 +34,7 @@ class IndicTTSWorker:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
+        base_url: str | None = None,
         language: str = "hi",
     ):
         self.base_url = (base_url or settings.tts_base_url).rstrip("/")
@@ -59,9 +60,15 @@ class IndicTTSWorker:
             if resp.status_code == 200:
                 # Raw float32 or int16 PCM
                 raw_bytes = resp.content
-                return np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+                return (
+                    np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32)
+                    / 32768.0
+                )
         except Exception:
-            pass
+            logger.warning(
+                "Indic TTS service failed; using synthetic fallback waveform",
+                exc_info=True,
+            )
 
         # Fallback synthetic speech-like waveform for offline / test mode
         duration_sec = max(0.4, len(chunk_text) * 0.05)
@@ -83,7 +90,7 @@ class IndicTTSWorker:
     ) -> AsyncGenerator[bytes, None]:
         """
         Incrementally synthesize text and yield 20ms (320 bytes) 8kHz PCM frames.
-        
+
         Monitors First-Chunk-Time to meet the <= 280ms target.
         """
         start_time = time.perf_counter()
@@ -95,7 +102,6 @@ class IndicTTSWorker:
         pcm_buffer = bytearray()
 
         for idx, chunk in enumerate(chunks):
-            chunk_start = time.perf_counter()
             audio_22k = await self._synthesize_chunk_audio(chunk)
 
             # Polyphase downsample from 22.05 kHz to 8 kHz
@@ -111,7 +117,9 @@ class IndicTTSWorker:
 
             if not first_chunk_emitted:
                 ttfc_ms = (time.perf_counter() - start_time) * 1000.0
-                logger.info(f"TTS First Chunk Latency: {ttfc_ms:.1f}ms for '{chunk[:30]}...'")
+                logger.info(
+                    f"TTS First Chunk Latency: {ttfc_ms:.1f}ms for '{chunk[:30]}...'"
+                )
                 first_chunk_emitted = True
 
             # Emit 20ms frames (320 bytes each)

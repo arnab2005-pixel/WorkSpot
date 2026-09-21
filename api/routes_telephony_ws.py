@@ -13,20 +13,19 @@ Handles:
 import asyncio
 import json
 import logging
-from typing import Optional
+
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from config.config import get_settings
 from schemas.websocket_events import (
-    WSMessageType,
     ClearBufferEvent,
-    TranscriptInterimEvent,
     TranscriptFinalEvent,
+    WSMessageType,
 )
-from services.audio.vad_filter import SileroVAD, VADState
-from services.audio.resampler import AudioResampler
 from services.asr.whisper_worker import WhisperASRWorker
+from services.audio.resampler import AudioResampler
+from services.audio.vad_filter import SileroVAD, VADState
 from services.orchestrator.state_machine import ConversationFSM
 from services.tts.indic_tts_worker import IndicTTSWorker
 
@@ -92,7 +91,7 @@ class TelephonyCallSession:
         """Send JSON control frame to FreeSWITCH / client."""
         try:
             await self.ws.send_text(json.dumps(event_dict, ensure_ascii=False))
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - WebSocket frame delivery failure must not crash session
             logger.debug(f"Failed to send WS control frame: {e}")
 
     async def handle_barge_in(self):
@@ -248,12 +247,12 @@ async def telephony_media_ws(websocket: WebSocket, session_id: str):
         while True:
             message = await websocket.receive()
 
-            if "bytes" in message and message["bytes"]:
+            if message.get("bytes"):
                 # Ingress raw 8kHz PCM audio chunk
                 raw_bytes = message["bytes"]
                 await session.raw_audio_queue.put(raw_bytes)
 
-            elif "text" in message and message["text"]:
+            elif message.get("text"):
                 # Ingress JSON control frame
                 try:
                     payload = json.loads(message["text"])
@@ -278,13 +277,13 @@ async def telephony_media_ws(websocket: WebSocket, session_id: str):
                     elif event_type == WSMessageType.BARGE_IN:
                         await session.handle_barge_in()
 
-                except Exception as json_err:
+                except (json.JSONDecodeError, TypeError, KeyError) as json_err:
                     logger.warning(f"Error parsing WS text message: {json_err}")
 
     except WebSocketDisconnect:
         logger.info(f"Telephony WebSocket disconnected for session {session_id}")
-    except Exception as e:
-        logger.error(f"Error in telephony WebSocket loop: {e}", exc_info=True)
+    except Exception:
+        logger.exception("Error in telephony WebSocket loop")
     finally:
         await session.stop()
         logger.info(f"Telephony session resources cleaned up for {session_id}")

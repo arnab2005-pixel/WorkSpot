@@ -5,9 +5,9 @@ INIT_CONSENT -> GEOGRAPHIC_INTAKE -> VOCATIONAL_DISCOVERY -> MOBILITY_AND_INTENT
 """
 
 import pytest
-import pytest_asyncio
-from services.orchestrator.state_machine import ConversationFSM
+
 from schemas.session import FSMState, SlotStatus
+from services.orchestrator.state_machine import ConversationFSM
 
 
 @pytest.mark.asyncio

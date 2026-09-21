@@ -9,15 +9,16 @@ Wires:
 """
 
 import os
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from config.config import get_settings
 from api.routes_mock import router as mock_router
 from api.routes_telephony_ws import router as ws_router
+from config.config import get_settings
 
 settings = get_settings()
 
@@ -80,6 +81,7 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
+
     listen_port = int(os.environ.get("PORT", settings.port))
     uvicorn.run(
         "api.server:app",

@@ -7,11 +7,11 @@ Implements low-latency bidirectional polyphase resampling using scipy.signal.res
 Ensures latency <= 15ms per chunk.
 """
 
+import logging
 import math
 import time
-import logging
 from dataclasses import dataclass
-from typing import Union, Tuple, Optional
+
 import numpy as np
 from scipy.signal import resample_poly
 
@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ResampleConfig:
     """Configuration for polyphase audio resampling."""
+
     src_rate: int
     dst_rate: int
     dtype: np.dtype = np.float32
@@ -30,16 +31,16 @@ class ResampleConfig:
 class AudioResampler:
     """
     High-performance polyphase audio resampler.
-    
+
     Supports numpy ndarray and raw linear 16-bit PCM bytes.
     """
 
     def __init__(self, default_src_rate: int = 8000, default_dst_rate: int = 16000):
         self.default_src_rate = default_src_rate
         self.default_dst_rate = default_dst_rate
-        self._ratio_cache: dict[Tuple[int, int], Tuple[int, int]] = {}
+        self._ratio_cache: dict[tuple[int, int], tuple[int, int]] = {}
 
-    def _get_factors(self, src_rate: int, dst_rate: int) -> Tuple[int, int]:
+    def _get_factors(self, src_rate: int, dst_rate: int) -> tuple[int, int]:
         """Compute coprime up/down resampling factors."""
         key = (src_rate, dst_rate)
         if key not in self._ratio_cache:
@@ -52,17 +53,17 @@ class AudioResampler:
     def resample_array(
         self,
         audio: np.ndarray,
-        src_rate: Optional[int] = None,
-        dst_rate: Optional[int] = None,
+        src_rate: int | None = None,
+        dst_rate: int | None = None,
     ) -> np.ndarray:
         """
         Resample a 1D or 2D numpy audio array.
-        
+
         Args:
             audio: Input audio array (float32 or int16)
             src_rate: Source sample rate (Hz)
             dst_rate: Destination sample rate (Hz)
-            
+
         Returns:
             Resampled numpy array matching input dtype
         """
@@ -79,7 +80,9 @@ class AudioResampler:
             float_audio = audio.astype(np.float32) / 32768.0
             resampled = resample_poly(float_audio, up, down)
             # Clip and convert back to int16
-            resampled = np.clip(resampled * 32768.0, -32768.0, 32767.0).astype(orig_dtype)
+            resampled = np.clip(resampled * 32768.0, -32768.0, 32767.0).astype(
+                orig_dtype
+            )
             return resampled
         else:
             return resample_poly(audio, up, down).astype(orig_dtype)
@@ -92,12 +95,12 @@ class AudioResampler:
     ) -> bytes:
         """
         Resample raw 16-bit Mono Linear PCM bytes.
-        
+
         Args:
             pcm_bytes: Raw PCM byte stream
             src_rate: Source sample rate
             dst_rate: Target sample rate
-            
+
         Returns:
             Resampled PCM byte stream
         """
