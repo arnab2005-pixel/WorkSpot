@@ -348,7 +348,18 @@ function AppFrame(p: any) {
       {p.screen === "home" && <HomePage {...p} />}
       {!(["profile", "opportunities", "opportunityDetail", "advisor", "progress", "notifications", "help", "home"] as string[]).includes(p.screen) && <HomePage {...p} />}
     </main>
-    <nav className="mobile-nav"><button onClick={() => p.goTo("home" as Screen)}><span>⌂</span>{c.nav[0]}</button><button onClick={() => p.goTo("opportunities")}><span>▣</span>{c.nav[2]}</button><button onClick={() => p.goTo("advisor")}><span>✦</span>{c.nav[3]}</button><button onClick={() => p.goTo("progress")}><span>↗</span>{c.nav[4]}</button></nav>
+    {(() => {
+      const mobileNavIndex = p.screen === "home" ? 0 : (p.screen === "opportunities" || p.screen === "opportunityDetail") ? 1 : p.screen === "advisor" ? 2 : p.screen === "progress" ? 3 : -1;
+      return (
+        <nav className="mobile-nav" aria-label="Mobile Navigation" style={{ "--active-index": mobileNavIndex } as React.CSSProperties}>
+          <div className="mobile-nav-indicator" aria-hidden="true" />
+          <button className={mobileNavIndex === 0 ? "active" : ""} aria-current={mobileNavIndex === 0 ? "page" : undefined} onClick={() => p.goTo("home" as Screen)}><span>⌂</span>{c.nav[0]}</button>
+          <button className={mobileNavIndex === 1 ? "active" : ""} aria-current={mobileNavIndex === 1 ? "page" : undefined} onClick={() => p.goTo("opportunities")}><span>▣</span>{c.nav[2]}</button>
+          <button className={mobileNavIndex === 2 ? "active" : ""} aria-current={mobileNavIndex === 2 ? "page" : undefined} onClick={() => p.goTo("advisor")}><span>✦</span>{c.nav[3]}</button>
+          <button className={mobileNavIndex === 3 ? "active" : ""} aria-current={mobileNavIndex === 3 ? "page" : undefined} onClick={() => p.goTo("progress")}><span>↗</span>{c.nav[4]}</button>
+        </nav>
+      );
+    })()}
   </div>;
 }
 
