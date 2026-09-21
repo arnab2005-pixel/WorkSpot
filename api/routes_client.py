@@ -158,81 +158,117 @@ def build_profile_dict(session: Any) -> Dict[str, Any]:
     }
 
 
-def build_recommendations_for_session(session: Any) -> List[RecommendationItem]:
-    """Generates rich recommendation cards based on session profile and FSM output."""
+async def build_recommendations_for_session(
+    session: Any, mongo_service: Optional[Any] = None
+) -> List[RecommendationItem]:
+    """Generates rich recommendation cards querying MongoDB NSQF courses and PM-AJAY GIA subsidy rules."""
     entities = getattr(session, "extracted_entities", {}) or {}
     trade = entities.get("detected_trade", "").lower()
-    district = entities.get("district_code", "Varanasi")
-    district_clean = district.replace("UP_", "").capitalize()
+    district = entities.get("district_code", "UP_VARANASI")
+    district_clean = district.replace("UP_", "").replace("BR_", "").replace("MP_", "").replace("RJ_", "").replace("MH_", "").replace("WB_", "").capitalize()
     enterprise = entities.get("enterprise_details", {})
     intent = entities.get("employment_intent", "Either")
+    is_self_emp = intent in ("SELF_EMPLOYMENT", "HYBRID", "Either") or bool(enterprise)
+    has_exp = float(entities.get("prior_experience_years", 0.0)) > 0
 
     items: List[RecommendationItem] = []
 
-    # 1. Primary Skill / EDP Training Card
-    if "सिलाई" in trade or "tailor" in trade or "दर्जी" in trade:
-        items.append(
-            RecommendationItem(
-                id="tailor-edp-01",
-                type="Training",
-                title="Self Employed Tailor (सिलाई दर्जी)",
-                provider="Skill India Digital Hub / PM-AJAY",
-                location=f"{district_clean} Skill Center, Cantt",
-                match=96,
-                explanation="NSQF Level 4 training with hands-on garment cutting, machine operation, free toolkit, and ₹1,500 monthly stipend.",
-                tags=["NSQF Level 4", "Free Toolkit", "Stipend ₹1500/mo", "3 Months"],
-                qp_code="AMH/Q0301",
-                stipend="₹1500 per month",
+    # 1. Query MongoDB for real district courses if connected
+    mongo_courses = []
+    if mongo_service and getattr(mongo_service, "_connected", False):
+        try:
+            trade_query = trade or "सिलाई दर्जी"
+            query_embedding = fsm.embedder.embed_text(trade_query)
+            mongo_courses = await mongo_service.search_courses(
+                query_embedding=query_embedding,
+                district_code=district,
+                education_tier=1,
+                limit=2,
+                is_enterprise=is_self_emp,
+                has_prior_experience=has_exp,
             )
-        )
-    elif "बांस" in trade or "bamboo" in trade:
+        except Exception as e:
+            logger.warning(f"Failed to query courses from MongoDB: {e}")
+
+    # Map MongoDB courses
+    for c in mongo_courses:
+        qp = c.get("qp_code", "VOC/Q001")
+        name = c.get("course_name", "Vocational Trade Training")
+        indic = c.get("course_name_indic")
+        display_title = f"{name} ({indic})" if indic else name
+        raw_score = c.get("score", 0.94)
+        match_pct = int(min(99, max(75, round(raw_score * 100))))
+        stipend = c.get("stipend_per_month") or 1500
+        duration = c.get("duration_hours") or 240
+        duration_months = max(1, duration // 80)
+        tc_name = c.get("training_center") or f"{district_clean} Skill Center"
+        sector = c.get("sector") or "Vocational"
+        nsqf = c.get("nsqf_level") or 4
+
         items.append(
             RecommendationItem(
-                id="bamboo-craft-01",
+                id=f"course-{qp}",
                 type="Training",
-                title="Bamboo Utility Handicrafts Producer",
-                provider="ODOP Cluster / PM-AJAY Skill Desk",
-                location=f"{district_clean} Handicraft Cluster",
-                match=94,
-                explanation="Specialized training in bamboo curing, weaving, and modern utility item fabrication for regional markets.",
-                tags=["ODOP Aligned", "Tool Support", "Local Cluster", "2 Months"],
-                qp_code="CON/Q0801",
-                stipend="₹1500 per month",
-            )
-        )
-    elif "बिजली" in trade or "solar" in trade or "electric" in trade:
-        items.append(
-            RecommendationItem(
-                id="solar-pv-01",
-                type="Training",
-                title="Solar PV Installation & Maintenance",
-                provider="PM Surya Ghar Skill Partner",
-                location=f"{district_clean} District Training Center",
-                match=92,
-                explanation="High-demand renewable energy installation technician course aligned with PM Surya Ghar scheme.",
-                tags=["Green Trade", "NSQF Level 4", "High Demand", "3 Months"],
-                qp_code="ELE/Q5901",
-                stipend="₹1500 per month",
-            )
-        )
-    else:
-        items.append(
-            RecommendationItem(
-                id="general-voc-01",
-                type="Training",
-                title="Vocational Trade & Entrepreneurship",
-                provider="District Skill Center",
-                location=f"{district_clean} Hub",
-                match=90,
-                explanation="Comprehensive technical training with certification, tool kit, and livelihood placement support.",
-                tags=["NSQF Aligned", "Placement Support", "Free Training"],
-                qp_code="AMH/Q0301",
-                stipend="₹1500 per month",
+                title=display_title,
+                provider=tc_name,
+                location=f"{district_clean} Center",
+                match=match_pct,
+                explanation=f"NSQF Level {nsqf} course in {sector} aligned with your skills. Includes free toolkit, practical workshop, and ₹{stipend} monthly stipend.",
+                tags=[f"NSQF Level {nsqf}", "Free Toolkit", f"Stipend ₹{stipend}/mo", f"{duration_months} Months"],
+                qp_code=qp,
+                stipend=f"₹{stipend} per month",
             )
         )
 
+    # Fallback to curated courses if MongoDB returned none
+    if not items:
+        if "सिलाई" in trade or "tailor" in trade or "दर्जी" in trade:
+            items.append(
+                RecommendationItem(
+                    id="tailor-edp-01",
+                    type="Training",
+                    title="Self Employed Tailor (सिलाई दर्जी)",
+                    provider="Skill India Digital Hub / PM-AJAY",
+                    location=f"{district_clean} Skill Center, Cantt",
+                    match=96,
+                    explanation="NSQF Level 4 training with hands-on garment cutting, machine operation, free toolkit, and ₹1,500 monthly stipend.",
+                    tags=["NSQF Level 4", "Free Toolkit", "Stipend ₹1500/mo", "3 Months"],
+                    qp_code="AMH/Q0301",
+                    stipend="₹1500 per month",
+                )
+            )
+        elif "बांस" in trade or "bamboo" in trade:
+            items.append(
+                RecommendationItem(
+                    id="bamboo-craft-01",
+                    type="Training",
+                    title="Bamboo Utility Handicrafts Producer",
+                    provider="ODOP Cluster / PM-AJAY Skill Desk",
+                    location=f"{district_clean} Handicraft Cluster",
+                    match=94,
+                    explanation="Specialized training in bamboo curing, weaving, and modern utility item fabrication for regional markets.",
+                    tags=["ODOP Aligned", "Tool Support", "Local Cluster", "2 Months"],
+                    qp_code="CON/Q0801",
+                    stipend="₹1500 per month",
+                )
+            )
+        else:
+            items.append(
+                RecommendationItem(
+                    id="general-voc-01",
+                    type="Training",
+                    title="Self Employed Tailor & Vocational Trade",
+                    provider=f"{district_clean} District Skill Center",
+                    location=f"{district_clean} Hub",
+                    match=92,
+                    explanation="Comprehensive technical training with certification, tool kit, and livelihood placement support.",
+                    tags=["NSQF Level 4", "Free Toolkit", "Stipend ₹1500/mo"],
+                    qp_code="AMH/Q0301",
+                    stipend="₹1500 per month",
+                )
+            )
+
     # 2. PM-AJAY GIA Capital Asset Grant Card (Always eligible for SC enterprise / self-employment)
-    is_self_emp = intent in ("SELF_EMPLOYMENT", "HYBRID", "Either") or bool(enterprise)
     if is_self_emp:
         items.append(
             RecommendationItem(
@@ -261,19 +297,19 @@ def build_recommendations_for_session(session: Any) -> List[RecommendationItem]:
         )
     )
 
-    # 4. EV Two-Wheeler Service Technician (Future-ready modern trade)
+    # 4. Modern Sector Trade (Bias Guard per spec)
     items.append(
         RecommendationItem(
-            id="ev-service-01",
+            id="solar-pv-01",
             type="Training",
-            title="Electric Two-Wheeler Service & Diagnostics",
-            provider="Skill India Digital Hub",
-            location=f"Within 15 km of {district_clean}",
-            match=85,
-            explanation="Hands-on electric mobility repair training with industry apprenticeship and immediate workshop placement.",
-            tags=["Future-ready", "Apprenticeship", "6 Months"],
-            qp_code="ASC/Q1411",
-            stipend="₹2000 per month",
+            title="Solar PV Installation & Maintenance",
+            provider="PM Surya Ghar Skill Partner",
+            location=f"{district_clean} District Training Center",
+            match=86,
+            explanation="High-demand renewable energy installation technician course aligned with PM Surya Ghar scheme.",
+            tags=["Green Trade", "NSQF Level 4", "High Demand", "3 Months"],
+            qp_code="ELE/Q5901",
+            stipend="₹1500 per month",
         )
     )
 
@@ -299,6 +335,19 @@ async def create_session(req: CreateSessionRequest):
     session.extracted_entities["selected_language"] = chosen_lang
     session.extracted_entities["district_code"] = req.district or "UP_VARANASI"
     await fsm.session_cache.save_session(session)
+
+    # Persist session record to MongoDB
+    if fsm.mongo_service and getattr(fsm.mongo_service, "_connected", False):
+        try:
+            await fsm.mongo_service.save_session_record(session_id, {
+                "caller_id": req.phone_number or "web_kiosk_beneficiary",
+                "language": chosen_lang,
+                "district_code": req.district or "UP_VARANASI",
+                "state": "interview",
+                "created_at": datetime.now(timezone.utc),
+            })
+        except Exception as e:
+            logger.warning(f"Failed to log session to MongoDB: {e}")
 
     initial_prompt = INITIAL_GREETINGS.get(chosen_lang, INITIAL_GREETINGS["Hindi"])
     profile = build_profile_dict(session)
@@ -350,7 +399,7 @@ async def delete_session(session_id: str):
     """
     session = await fsm.session_cache.get_session(session_id)
     if session:
-        session.current_state = FSMState.DISENGAGE
+        session.current_state = FSMState.COMPLETED
         await fsm.session_cache.save_session(session)
     return {"ok": True, "session_id": session_id}
 
@@ -361,7 +410,7 @@ async def interact(req: InteractRequest):
     Execute conversational turn in the FSM:
     - Extracts trade, mobility, education, enterprise goals.
     - Evaluates PM-AJAY GIA ₹50k asset subsidy eligibility.
-    - Matches NSQF courses.
+    - Matches NSQF courses from MongoDB.
     - Generates dynamic spoken Indic response.
     """
     if not req.session_id:
@@ -376,7 +425,7 @@ async def interact(req: InteractRequest):
     # Re-fetch updated session
     session = await fsm.session_cache.get_session(req.session_id)
     profile = build_profile_dict(session)
-    recs = build_recommendations_for_session(session)
+    recs = await build_recommendations_for_session(session, mongo_service=fsm.mongo_service)
 
     # Enterprise subsidy checks
     ent = session.extracted_entities.get("enterprise_details", {})
@@ -384,6 +433,18 @@ async def interact(req: InteractRequest):
     max_subsidy = 50000.0 if eligible_gia else 0.0
     routing = "DPIU_CAPITAL_GRANT_DESK" if eligible_gia else None
     is_complete = step_result.get("current_state") in (FSMState.RECOMMENDATION_DELIVERY.value, FSMState.COMPLETED.value)
+
+    # Update MongoDB session document
+    if fsm.mongo_service and getattr(fsm.mongo_service, "_connected", False):
+        try:
+            await fsm.mongo_service.save_session_record(req.session_id, {
+                "current_state": step_result.get("current_state"),
+                "updated_slots": step_result.get("updated_slots", {}),
+                "profile": profile,
+                "recommendations_count": len(recs),
+            })
+        except Exception as e:
+            logger.warning(f"Failed to update session record in MongoDB: {e}")
 
     return InteractResponse(
         session_id=req.session_id,
@@ -409,7 +470,7 @@ async def get_recommendations(session_id: str):
         # Fallback dummy session if not yet initialized
         session = await fsm.init_session(session_id)
 
-    return build_recommendations_for_session(session)
+    return await build_recommendations_for_session(session, mongo_service=fsm.mongo_service)
 
 
 @router.post("/advisor/chat", response_model=AdvisorResponse)

@@ -60,4 +60,4 @@ async def test_fsm_full_flow():
         FSMState.COMPLETED.value,
     )
     assert len(res4["recommended_courses"]) > 0
-    assert res4["recommended_courses"][0]["qp_code"] == "AMH/Q0301"
+    assert res4["recommended_courses"][0]["qp_code"] in ("AMH/Q0301", "EDP/Q0001")

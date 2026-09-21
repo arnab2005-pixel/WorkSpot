@@ -10,6 +10,7 @@ Includes fallback cosine-similarity matcher for standalone/offline MongoDB testi
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import numpy as np
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -154,17 +155,21 @@ class MongoService:
             return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
 
         try:
+            dist_clean = district_code.replace("UP_", "").replace("BR_", "").replace("MP_", "").replace("RJ_", "").replace("MH_", "").replace("WB_", "").strip()
             query = {
                 "status": "ACTIVE",
-                "district_availability": district_code,
+                "$or": [
+                    {"district_availability": district_code},
+                    {"district_availability": {"$regex": dist_clean, "$options": "i"}},
+                ],
                 "min_education_tier": {"$lte": education_tier},
             }
             cursor = self.db.nsqf_courses.find(query)
-            docs = await cursor.to_list(length=50)
+            docs = await cursor.to_list(length=100)
 
             if not docs:
                 cursor = self.db.nsqf_courses.find({"status": "ACTIVE"})
-                docs = await cursor.to_list(length=50)
+                docs = await cursor.to_list(length=100)
 
             if not docs:
                 return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
@@ -370,3 +375,35 @@ class MongoService:
         except Exception as e:
             logger.error(f"Failed to get beneficiary: {e}")
             return None
+
+    async def save_session_record(self, session_id: str, data: Dict[str, Any]) -> bool:
+        """Persist or update conversational session document in MongoDB."""
+        await self.connect()
+        if not self._connected or self.db is None:
+            return False
+
+        try:
+            data["session_id"] = session_id
+            data["updated_at"] = datetime.now(timezone.utc)
+            await self.db.sessions.update_one(
+                {"session_id": session_id},
+                {"$set": data},
+                upsert=True,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save session to MongoDB: {e}")
+            return False
+
+    async def get_session_record(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Retrieve conversational session document from MongoDB."""
+        await self.connect()
+        if not self._connected or self.db is None:
+            return None
+
+        try:
+            return await self.db.sessions.find_one({"session_id": session_id})
+        except Exception as e:
+            logger.error(f"Failed to get session from MongoDB: {e}")
+            return None
+
