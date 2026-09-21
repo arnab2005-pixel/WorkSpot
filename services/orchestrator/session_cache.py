@@ -4,10 +4,10 @@ Maintains state machine sessions with automatic TTL expiration (1800s default)
 and graceful in-memory fallback when Redis is unavailable.
 """
 
-import json
 import logging
-from typing import Optional, Dict, Any
+
 import redis.asyncio as aioredis
+from pydantic import ValidationError
 
 from config.config import get_settings
 from schemas.session import SessionData
@@ -23,13 +23,13 @@ class SessionCache:
 
     def __init__(
         self,
-        redis_url: Optional[str] = None,
-        ttl_seconds: Optional[int] = None,
+        redis_url: str | None = None,
+        ttl_seconds: int | None = None,
     ):
         self.redis_url = redis_url or settings.redis_url
         self.ttl_seconds = ttl_seconds or settings.session_ttl_seconds
-        self._redis: Optional[aioredis.Redis] = None
-        self._memory_cache: Dict[str, str] = {}
+        self._redis: aioredis.Redis | None = None
+        self._memory_cache: dict[str, str] = {}
         self._connected = False
 
     async def connect(self):
@@ -46,7 +46,7 @@ class SessionCache:
             await self._redis.ping()
             self._connected = True
             logger.info(f"Connected to Redis session cache at {self.redis_url}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
             logger.warning(
                 f"Redis connection failed: {e}. Falling back to in-memory session cache."
             )
@@ -71,7 +71,7 @@ class SessionCache:
             try:
                 await self._redis.setex(key, self.ttl_seconds, data_str)
                 return True
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
                 logger.error(f"Redis setex failed: {e}. Falling back to memory.")
                 self._memory_cache[key] = data_str
                 return True
@@ -79,7 +79,7 @@ class SessionCache:
             self._memory_cache[key] = data_str
             return True
 
-    async def get_session(self, session_id: str) -> Optional[SessionData]:
+    async def get_session(self, session_id: str) -> SessionData | None:
         """Load session data by ID."""
         await self.connect()
         key = self._key(session_id)
@@ -88,7 +88,7 @@ class SessionCache:
         if self._connected and self._redis:
             try:
                 raw_data = await self._redis.get(key)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
                 logger.error(f"Redis get failed: {e}. Checking memory fallback.")
                 raw_data = self._memory_cache.get(key)
         else:
@@ -99,7 +99,7 @@ class SessionCache:
 
         try:
             return SessionData.model_validate_json(raw_data)
-        except Exception as e:
+        except (ValidationError, ValueError, TypeError) as e:
             logger.error(f"Error deserializing session {session_id}: {e}")
             return None
 
@@ -113,7 +113,7 @@ class SessionCache:
             try:
                 await self._redis.delete(key)
                 return True
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
                 logger.error(f"Redis delete failed: {e}")
                 return False
         return True

@@ -6,7 +6,7 @@ Unit tests for the audio processing pipeline:
 """
 
 import time
-import pytest
+
 import numpy as np
 
 from services.audio.resampler import AudioResampler
@@ -34,7 +34,7 @@ def test_pcm_bytes_resampling_and_latency():
     resampler = AudioResampler()
 
     # 20ms chunk at 8kHz 16-bit mono = 160 samples = 320 bytes
-    chunk_8k = (b"\x00\x01" * 160)
+    chunk_8k = b"\x00\x01" * 160
 
     start = time.perf_counter()
     chunk_16k = resampler.telephony_to_asr(chunk_8k)
@@ -42,7 +42,9 @@ def test_pcm_bytes_resampling_and_latency():
 
     # 160 samples at 8kHz -> 320 samples at 16kHz = 640 bytes
     assert len(chunk_16k) == 640
-    assert elapsed_ms < 15.0, f"Resampling latency {elapsed_ms:.2f}ms exceeded 15ms budget"
+    assert elapsed_ms < 15.0, (
+        f"Resampling latency {elapsed_ms:.2f}ms exceeded 15ms budget"
+    )
 
 
 def test_pcm16_float32_conversion():
@@ -53,7 +55,9 @@ def test_pcm16_float32_conversion():
     raw_bytes = int16_original.tobytes()
 
     float_audio = resampler.pcm16_to_float32(raw_bytes)
-    assert np.allclose(float_audio, [0.0, 0.5, -0.5, 32767.0 / 32768.0, -1.0], atol=1e-4)
+    assert np.allclose(
+        float_audio, [0.0, 0.5, -0.5, 32767.0 / 32768.0, -1.0], atol=1e-4
+    )
 
     reconstructed_bytes = resampler.float32_to_pcm16(float_audio)
     reconstructed_int16 = np.frombuffer(reconstructed_bytes, dtype=np.int16)

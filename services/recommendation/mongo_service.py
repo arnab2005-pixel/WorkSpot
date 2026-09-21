@@ -10,13 +10,14 @@ Includes fallback cosine-similarity matcher for standalone/offline MongoDB testi
 
 import logging
 import time
-from typing import List, Optional, Dict, Any
+from typing import Any
+
 import numpy as np
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import OperationFailure
+from pydantic import ValidationError
+from pymongo.errors import OperationFailure, PyMongoError
 
 from config.config import get_settings
-from schemas.course import CourseDocument
 from schemas.beneficiary import BeneficiaryRecord
 from schemas.beneficiary_profile import EnterpriseAspirations
 
@@ -31,12 +32,12 @@ class MongoService:
 
     def __init__(
         self,
-        mongo_url: Optional[str] = None,
-        database_name: Optional[str] = None,
+        mongo_url: str | None = None,
+        database_name: str | None = None,
     ):
         self.mongo_url = mongo_url or settings.mongodb_url
         self.database_name = database_name or settings.mongodb_database
-        self.client: Optional[AsyncIOMotorClient] = None
+        self.client: AsyncIOMotorClient | None = None
         self.db = None
         self._connected = False
 
@@ -54,9 +55,13 @@ class MongoService:
             # Verify connectivity
             await self.client.admin.command("ping")
             self._connected = True
-            logger.info(f"Connected to MongoDB at {self.mongo_url}/{self.database_name}")
-        except Exception as e:
-            logger.warning(f"MongoDB connection failed: {e}. Running in disconnected/mock mode.")
+            logger.info(
+                f"Connected to MongoDB at {self.mongo_url}/{self.database_name}"
+            )
+        except Exception as e:  # noqa: BLE001 - MongoDB failure must use application fallback
+            logger.warning(
+                f"MongoDB connection failed: {e}. Running in disconnected/mock mode."
+            )
             self._connected = False
 
     async def close(self):
@@ -68,13 +73,13 @@ class MongoService:
 
     async def search_courses(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         district_code: str,
         education_tier: int = 1,
         limit: int = 2,
         is_enterprise: bool = False,
         has_prior_experience: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Execute Atlas Vector Search query with compound filtering per spec:
         - $vectorSearch on nsqf_vector_index
@@ -101,11 +106,7 @@ class MongoService:
                     },
                 }
             },
-            {
-                "$addFields": {
-                    "score": {"$meta": "vectorSearchScore"}
-                }
-            },
+            {"$addFields": {"score": {"$meta": "vectorSearchScore"}}},
             {"$limit": limit},
         ]
 
@@ -114,7 +115,9 @@ class MongoService:
                 cursor = self.db.nsqf_courses.aggregate(pipeline)
                 results = await cursor.to_list(length=limit)
                 elapsed_ms = (time.perf_counter() - start) * 1000.0
-                logger.info(f"Atlas Vector Search returned {len(results)} courses in {elapsed_ms:.1f}ms")
+                logger.info(
+                    f"Atlas Vector Search returned {len(results)} courses in {elapsed_ms:.1f}ms"
+                )
                 if is_enterprise and results:
                     # Tag with EDP/RPL pathway
                     for r in results:
@@ -128,30 +131,44 @@ class MongoService:
                     f"Atlas $vectorSearch not supported on local Mongo ({op_err}). Running in-memory cosine fallback."
                 )
                 return await self._fallback_vector_search(
-                    query_embedding, district_code, education_tier, limit, is_enterprise, has_prior_experience
+                    query_embedding,
+                    district_code,
+                    education_tier,
+                    limit,
+                    is_enterprise,
+                    has_prior_experience,
                 )
-            except Exception as e:
-                logger.error(f"Error querying courses: {e}", exc_info=True)
+            except Exception:
+                logger.exception("Error querying courses")
                 return await self._fallback_vector_search(
-                    query_embedding, district_code, education_tier, limit, is_enterprise, has_prior_experience
+                    query_embedding,
+                    district_code,
+                    education_tier,
+                    limit,
+                    is_enterprise,
+                    has_prior_experience,
                 )
         else:
-            return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+            return self._mock_course_results(
+                district_code, is_enterprise, has_prior_experience
+            )
 
     async def _fallback_vector_search(
         self,
-        query_embedding: List[float],
+        query_embedding: list[float],
         district_code: str,
         education_tier: int,
         limit: int,
         is_enterprise: bool = False,
         has_prior_experience: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """
         Fallback search for standard MongoDB or testing without Atlas Search engine.
         """
         if not self._connected or self.db is None:
-            return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+            return self._mock_course_results(
+                district_code, is_enterprise, has_prior_experience
+            )
 
         try:
             query = {
@@ -167,7 +184,9 @@ class MongoService:
                 docs = await cursor.to_list(length=50)
 
             if not docs:
-                return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+                return self._mock_course_results(
+                    district_code, is_enterprise, has_prior_experience
+                )
 
             q_vec = np.array(query_embedding, dtype=np.float32)
             norm_q = np.linalg.norm(q_vec)
@@ -180,7 +199,11 @@ class MongoService:
                 if emb:
                     c_vec = np.array(emb, dtype=np.float32)
                     norm_c = np.linalg.norm(c_vec)
-                    score = float(np.dot(q_vec, c_vec) / (norm_q * norm_c)) if norm_c > 0 else 0.0
+                    score = (
+                        float(np.dot(q_vec, c_vec) / (norm_q * norm_c))
+                        if norm_c > 0
+                        else 0.0
+                    )
                 else:
                     score = 0.5
                 d_copy = dict(d)
@@ -196,16 +219,18 @@ class MongoService:
             scored.sort(key=lambda x: x.get("score", 0.0), reverse=True)
             return scored[:limit]
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - MongoDB failure must use application fallback
             logger.error(f"Fallback vector search failed: {e}")
-            return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
+            return self._mock_course_results(
+                district_code, is_enterprise, has_prior_experience
+            )
 
     def _mock_course_results(
         self,
         district_code: str,
         is_enterprise: bool = False,
         has_prior_experience: bool = False,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Mock course recommendations matching Section 5.1 and enterprise EDP/RPL routing."""
         if is_enterprise:
             if has_prior_experience:
@@ -286,7 +311,7 @@ class MongoService:
         self,
         phone_hash: str,
         enterprise: EnterpriseAspirations,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Process enterprise aspirations and apply financial scheme alignment:
         1. Capital Subsidy Prefill: If estimated_capital_required_inr == 'MICRO_UNDER_50K',
@@ -332,8 +357,10 @@ class MongoService:
                     {"$set": routing_record},
                     upsert=True,
                 )
-                logger.info(f"Updated beneficiary {phone_hash[:8]}... with GIA/credit routing: {credit_routing}")
-            except Exception as e:
+                logger.info(
+                    f"Updated beneficiary {phone_hash[:8]}... with GIA/credit routing: {credit_routing}"
+                )
+            except PyMongoError as e:
                 logger.error(f"Failed to update beneficiary enterprise routing: {e}")
 
         return routing_record
@@ -352,11 +379,11 @@ class MongoService:
                 upsert=True,
             )
             return True
-        except Exception as e:
+        except PyMongoError as e:
             logger.error(f"Failed to save beneficiary: {e}")
             return False
 
-    async def get_beneficiary(self, phone_hash: str) -> Optional[BeneficiaryRecord]:
+    async def get_beneficiary(self, phone_hash: str) -> BeneficiaryRecord | None:
         """Retrieve a beneficiary by salted phone hash."""
         await self.connect()
         if not self._connected or self.db is None:
@@ -367,6 +394,6 @@ class MongoService:
             if data:
                 return BeneficiaryRecord.model_validate(data)
             return None
-        except Exception as e:
+        except (PyMongoError, ValidationError, ValueError, TypeError) as e:
             logger.error(f"Failed to get beneficiary: {e}")
             return None

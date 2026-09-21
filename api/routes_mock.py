@@ -7,9 +7,10 @@ Exposes:
 Strictly conforms to Section 5.1 of the Project Engineering Specification.
 """
 
-from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
 
 from services.orchestrator.state_machine import ConversationFSM
 
@@ -37,9 +38,9 @@ class RecommendedCourse(BaseModel):
 
 class MockInteractResponse(BaseModel):
     session_id: str
-    updated_slots: Dict[str, Any]
+    updated_slots: dict[str, Any]
     spoken_response_indic: str
-    recommended_courses: List[RecommendedCourse]
+    recommended_courses: list[RecommendedCourse]
 
 
 @router.post("/session/start", response_model=SessionStartResponse)
@@ -49,6 +50,7 @@ async def mock_session_start():
     Conforms to spec section 5.1.
     """
     import uuid
+
     session_id = f"sess_test_{uuid.uuid4().hex[:5]}"
     await fsm.init_session(session_id)
 
@@ -71,19 +73,24 @@ async def mock_interact(req: MockInteractRequest):
     result = await fsm.step(req.session_id, req.user_transcript)
 
     # Convert recommended courses to model
-    courses: List[RecommendedCourse] = []
+    courses: list[RecommendedCourse] = []
     for c in result.get("recommended_courses", []):
         courses.append(
             RecommendedCourse(
                 qp_code=c.get("qp_code", "AMH/Q0301"),
                 course_name=c.get("course_name", "Self Employed Tailor"),
-                training_center=c.get("training_center", "Varanasi Skill Center, Cantt"),
+                training_center=c.get(
+                    "training_center", "Varanasi Skill Center, Cantt"
+                ),
                 stipend=c.get("stipend", "₹1500 per month"),
             )
         )
 
     # Ensure fallback course if empty to satisfy frontend mocks
-    if not courses and result.get("updated_slots", {}).get("missing_slot") == "COMPLETE":
+    if (
+        not courses
+        and result.get("updated_slots", {}).get("missing_slot") == "COMPLETE"
+    ):
         courses.append(
             RecommendedCourse(
                 qp_code="AMH/Q0301",
