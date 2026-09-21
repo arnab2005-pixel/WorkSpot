@@ -75,7 +75,8 @@ function App() {
       return sid;
     } catch (err) {
       console.warn("Backend session creation fallback:", err);
-      const fallbackId = `ws_${Math.random().toString(36).slice(2, 10)}`;
+      const randomPart = window.crypto.getRandomValues(new Uint32Array(1))[0].toString(36).padStart(8, "0").slice(0, 8);
+      const fallbackId = `ws_${randomPart}`;
       setSessionId(fallbackId);
       return fallbackId;
     }
