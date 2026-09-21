@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from config.config import get_settings
 from api.routes_mock import router as mock_router
 from api.routes_telephony_ws import router as ws_router
+from api.routes_client import router as client_router
 
 settings = get_settings()
 
@@ -53,6 +54,8 @@ static_path.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 # Register routers
+app.include_router(client_router)
+app.include_router(client_router, prefix="", tags=["client-alias"])
 app.include_router(mock_router)
 app.include_router(ws_router)
 
