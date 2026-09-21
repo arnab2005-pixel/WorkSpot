@@ -60,8 +60,8 @@ class IndicTTSWorker:
                 # Raw float32 or int16 PCM
                 raw_bytes = resp.content
                 return np.frombuffer(raw_bytes, dtype=np.int16).astype(np.float32) / 32768.0
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001 - TTS failure uses synthetic waveform
+            logger.debug("Indic TTS request failed: %s", exc)
 
         # Fallback synthetic speech-like waveform for offline / test mode
         duration_sec = max(0.4, len(chunk_text) * 0.05)

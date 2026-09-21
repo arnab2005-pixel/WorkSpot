@@ -11,6 +11,7 @@ import re
 import time
 from typing import Optional, Dict, Any
 import httpx
+from pydantic import ValidationError
 
 from config.config import get_settings
 from schemas.session import ExtractedSlots
@@ -97,9 +98,17 @@ class VLLMClient:
                 parsed_json = json.loads(content)
                 return ExtractedSlots.model_validate(parsed_json)
 
-        except Exception as e:
+        except (
+            httpx.HTTPError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as exc:
             logger.warning(
-                f"vLLM server call failed ({e}). Falling back to local slot extractor."
+                "vLLM server call failed (%s). Falling back to local slot extractor.",
+                exc,
             )
             return self._fallback_extract(user_transcript, current_state, known_slots)
 
@@ -227,8 +236,19 @@ class VLLMClient:
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 return LLMIntakePayload.model_validate_json(content)
-        except Exception as e:
-            logger.warning(f"vLLM enterprise intake call failed: {e}. Running dialect fallback parser.")
+        except (
+            httpx.HTTPError,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as exc:
+            logger.warning(
+                "vLLM enterprise intake call failed: %s. "
+                "Running dialect fallback parser.",
+                exc,
+            )
             return self._fallback_extract_enterprise(user_transcript, current_step)
 
     def _fallback_extract_enterprise(

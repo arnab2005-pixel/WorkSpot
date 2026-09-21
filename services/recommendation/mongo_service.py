@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 import numpy as np
 from motor.motor_asyncio import AsyncIOMotorClient
-from pymongo.errors import OperationFailure
+from pymongo.errors import OperationFailure, PyMongoError
+from pydantic import ValidationError
 
 from config.config import get_settings
 from schemas.course import CourseDocument
@@ -126,13 +127,14 @@ class MongoService:
                 return results
             except OperationFailure as op_err:
                 logger.warning(
-                    f"Atlas $vectorSearch not supported on local Mongo ({op_err}). Running in-memory cosine fallback."
+                    "Atlas $vectorSearch not supported on local Mongo (%s). Running in-memory cosine fallback.",
+                    op_err,
                 )
                 return await self._fallback_vector_search(
                     query_embedding, district_code, education_tier, limit, is_enterprise, has_prior_experience
                 )
-            except Exception as e:
-                logger.error(f"Error querying courses: {e}", exc_info=True)
+            except PyMongoError as exc:
+                logger.exception("Error querying courses: %s", exc)
                 return await self._fallback_vector_search(
                     query_embedding, district_code, education_tier, limit, is_enterprise, has_prior_experience
                 )
@@ -201,8 +203,8 @@ class MongoService:
             scored.sort(key=lambda x: x.get("score", 0.0), reverse=True)
             return scored[:limit]
 
-        except Exception as e:
-            logger.error(f"Fallback vector search failed: {e}")
+        except PyMongoError as exc:
+            logger.error("Fallback vector search failed: %s", exc)
             return self._mock_course_results(district_code, is_enterprise, has_prior_experience)
 
     def _mock_course_results(
@@ -337,9 +339,9 @@ class MongoService:
                     {"$set": routing_record},
                     upsert=True,
                 )
-                logger.info(f"Updated beneficiary {phone_hash[:8]}... with GIA/credit routing: {credit_routing}")
-            except Exception as e:
-                logger.error(f"Failed to update beneficiary enterprise routing: {e}")
+                logger.info("Updated beneficiary %s... with GIA/credit routing: %s", phone_hash[:8], credit_routing)
+            except PyMongoError as exc:
+                logger.error("Failed to update beneficiary enterprise routing: %s", exc)
 
         return routing_record
 
@@ -357,8 +359,8 @@ class MongoService:
                 upsert=True,
             )
             return True
-        except Exception as e:
-            logger.error(f"Failed to save beneficiary: {e}")
+        except PyMongoError as exc:
+            logger.error("Failed to save beneficiary: %s", exc)
             return False
 
     async def get_beneficiary(self, phone_hash: str) -> Optional[BeneficiaryRecord]:
@@ -372,8 +374,8 @@ class MongoService:
             if data:
                 return BeneficiaryRecord.model_validate(data)
             return None
-        except Exception as e:
-            logger.error(f"Failed to get beneficiary: {e}")
+        except (ValidationError, TypeError, ValueError) as exc:
+            logger.error("Failed to get beneficiary: %s", exc)
             return None
 
     async def save_session_record(self, session_id: str, data: Dict[str, Any]) -> bool:
@@ -391,8 +393,8 @@ class MongoService:
                 upsert=True,
             )
             return True
-        except Exception as e:
-            logger.error(f"Failed to save session to MongoDB: {e}")
+        except PyMongoError as exc:
+            logger.error("Failed to save session to MongoDB: %s", exc)
             return False
 
     async def get_session_record(self, session_id: str) -> Optional[Dict[str, Any]]:
@@ -403,7 +405,7 @@ class MongoService:
 
         try:
             return await self.db.sessions.find_one({"session_id": session_id})
-        except Exception as e:
-            logger.error(f"Failed to get session from MongoDB: {e}")
+        except PyMongoError as exc:
+            logger.error("Failed to get session from MongoDB: %s", exc)
             return None
 

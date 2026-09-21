@@ -83,8 +83,8 @@ class MongoDBClient:
             )
             self._connected = False
             return False
-        except Exception as e:
-            logger.error(f"Unexpected MongoDB connection error: {e}", exc_info=True)
+        except Exception as exc:
+            logger.exception("Unexpected MongoDB connection error: %s", exc)
             self._connected = False
             return False
 
@@ -107,9 +107,9 @@ class MongoDBClient:
                 "latency_ms": round(latency_ms, 2),
                 "database": self.database_name,
             }
-        except Exception as e:
-            logger.warning(f"MongoDB ping failed: {e}")
-            return {"status": "unhealthy", "connected": False, "error": str(e)}
+        except PyMongoError as exc:
+            logger.warning("MongoDB ping failed: %s", exc)
+            return {"status": "unhealthy", "connected": False, "error": str(exc)}
 
     async def check_atlas_vector_support(self) -> bool:
         """
@@ -142,10 +142,11 @@ class MongoDBClient:
             await cursor.to_list(length=1)
             self._is_atlas_search_supported = True
             logger.info("MongoDB Atlas $vectorSearch confirmed active and operational.")
-        except Exception as e:
+        except PyMongoError as exc:
             logger.info(
-                f"MongoDB deployment does not support Atlas $vectorSearch ({e}). "
-                f"Using accelerated in-memory vector matcher."
+                "MongoDB deployment does not support Atlas $vectorSearch (%s). "
+                "Using accelerated in-memory vector matcher.",
+                exc,
             )
             self._is_atlas_search_supported = False
 

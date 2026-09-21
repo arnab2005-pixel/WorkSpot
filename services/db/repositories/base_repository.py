@@ -5,6 +5,7 @@ Base repository providing common async MongoDB operations and error handling.
 import logging
 from typing import Optional, Dict, Any, List
 from motor.motor_asyncio import AsyncIOMotorCollection
+from pymongo.errors import PyMongoError
 
 from services.db.mongo_client import MongoDBClient, get_mongo_client
 

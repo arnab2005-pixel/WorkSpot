@@ -18,6 +18,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel, Field
+from pymongo.errors import PyMongoError
 
 from services.orchestrator.state_machine import ConversationFSM
 from schemas.session import FSMState
@@ -81,6 +82,7 @@ class SessionClientResponse(BaseModel):
     profile: Dict[str, Any]
     createdAt: str
     updatedAt: str
+    options: List[str] = Field(default_factory=list)
 
 
 class InteractRequest(BaseModel):
@@ -100,6 +102,7 @@ class InteractResponse(BaseModel):
     max_capital_subsidy_inr: float
     credit_desk_routing: Optional[str]
     is_complete: bool
+    options: List[str] = Field(default_factory=list)
 
 
 class AdvisorRequest(BaseModel):
@@ -187,8 +190,8 @@ async def build_recommendations_for_session(
                 is_enterprise=is_self_emp,
                 has_prior_experience=has_exp,
             )
-        except Exception as e:
-            logger.warning(f"Failed to query courses from MongoDB: {e}")
+        except PyMongoError as exc:
+            logger.warning("Failed to query courses from MongoDB: %s", exc)
 
     # Map MongoDB courses
     for c in mongo_courses:
@@ -346,12 +349,13 @@ async def create_session(req: CreateSessionRequest):
                 "state": "interview",
                 "created_at": datetime.now(timezone.utc),
             })
-        except Exception as e:
-            logger.warning(f"Failed to log session to MongoDB: {e}")
+        except PyMongoError as exc:
+            logger.warning("Failed to log session to MongoDB: %s", exc)
 
     initial_prompt = INITIAL_GREETINGS.get(chosen_lang, INITIAL_GREETINGS["Hindi"])
     profile = build_profile_dict(session)
     now_iso = datetime.now(timezone.utc).isoformat()
+    init_options = getattr(session.chained_state, "options", []) or ["हाँ, शुरू करें", "नमस्ते", "योजना की जानकारी"]
 
     return SessionClientResponse(
         id=session_id,
@@ -363,6 +367,7 @@ async def create_session(req: CreateSessionRequest):
         profile=profile,
         createdAt=now_iso,
         updatedAt=now_iso,
+        options=init_options,
     )
 
 
@@ -378,6 +383,7 @@ async def get_session(session_id: str):
     lang = session.extracted_entities.get("selected_language", "Hindi")
     profile = build_profile_dict(session)
     now_iso = datetime.now(timezone.utc).isoformat()
+    session_options = getattr(session.chained_state, "options", []) or ["हाँ, शुरू करें", "नमस्ते", "योजना की जानकारी"]
 
     return SessionClientResponse(
         id=session_id,
@@ -389,6 +395,7 @@ async def get_session(session_id: str):
         profile=profile,
         createdAt=now_iso,
         updatedAt=now_iso,
+        options=session_options,
     )
 
 
@@ -443,8 +450,8 @@ async def interact(req: InteractRequest):
                 "profile": profile,
                 "recommendations_count": len(recs),
             })
-        except Exception as e:
-            logger.warning(f"Failed to update session record in MongoDB: {e}")
+        except PyMongoError as exc:
+            logger.warning("Failed to update session record in MongoDB: %s", exc)
 
     return InteractResponse(
         session_id=req.session_id,
@@ -457,6 +464,7 @@ async def interact(req: InteractRequest):
         max_capital_subsidy_inr=max_subsidy,
         credit_desk_routing=routing,
         is_complete=is_complete,
+        options=step_result.get("options", []),
     )
 
 
@@ -550,6 +558,6 @@ async def audio_transcribe(
         # Fallback simulation if running in lightweight container:
         transcript = "हम सिलाई मशीन के दुकान खोलल चाहत बानी, 40000 के पूंजी चाही"
         return {"transcript": transcript, "language": language or "hi", "size_bytes": len(content)}
-    except Exception as exc:
-        logger.error(f"Error during audio transcription: {exc}")
+    except Exception as exc:  # noqa: BLE001 - fallback returns safe default
+        logger.error("Error during audio transcription: %s", exc)
         return {"transcript": "नमस्ते", "language": language or "hi"}

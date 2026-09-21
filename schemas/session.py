@@ -20,16 +20,56 @@ class FSMState(str, Enum):
     GEOGRAPHIC_INTAKE = "GEOGRAPHIC_INTAKE"
     LOCATION_CONFIRMED = "LOCATION_CONFIRMED"
     VOCATIONAL_DISCOVERY = "VOCATIONAL_DISCOVERY"
+    EXPERIENCE_DEPTH = "EXPERIENCE_DEPTH"
+    ASPIRATIONAL_PROBE = "ASPIRATIONAL_PROBE"
+    ENTERPRISE_CAPITAL = "ENTERPRISE_CAPITAL"
+    TRAINING_FORMAT = "TRAINING_FORMAT"
     TRADE_IDENTIFIED = "TRADE_IDENTIFIED"
     ENTERPRISE_SCOPING = "ENTERPRISE_SCOPING"
     MOBILITY_AND_INTENT = "MOBILITY_AND_INTENT"
     MOBILITY_CONFIRMED = "MOBILITY_CONFIRMED"
+    CONTEXTUAL_REPAIR = "CONTEXTUAL_REPAIR"
     RECOMMENDATION_DELIVERY = "RECOMMENDATION_DELIVERY"
     RECOMMENDATION_DELIVERED = "RECOMMENDATION_DELIVERED"
     ENROLLMENT_INITIATED = "ENROLLMENT_INITIATED"
     COMPLETED = "COMPLETED"
     ERROR = "ERROR"
     HANGUP = "HANGUP"
+
+
+class DialogueTurn(BaseModel):
+    """Individual turn record in the context-chained conversation."""
+    turn_index: int
+    system_question: str
+    user_raw_transcript: str
+    extracted_slot_key: str
+    extracted_slot_value: Any
+    confidence: float = 1.0
+
+
+class DynamicChainedState(BaseModel):
+    """
+    Context-Chained State Tracking Schema.
+    Tracks accumulated profile slots and dialogue trajectory metadata.
+    """
+    session_id: str
+    current_step: str
+    # Accumulated Profile
+    district: Optional[str] = None
+    block: Optional[str] = None
+    trade: Optional[str] = None
+    prior_experience: Optional[str] = None
+    employment_intent: Optional[str] = None  # WAGE vs SELF_EMPLOYMENT
+    premise_type: Optional[str] = None
+    capital_needed: Optional[str] = None
+    mobility_km: Optional[int] = None
+    education_level: Optional[str] = None
+
+    # Trajectory & Memory Chaining
+    turn_history: List[DialogueTurn] = Field(default_factory=list)
+    last_turn_summary: Optional[str] = None
+    active_conversational_hook: Optional[str] = None
+    options: List[str] = Field(default_factory=list)
 
 
 class SlotStatus(str, Enum):
@@ -123,6 +163,10 @@ class SessionData(BaseModel):
     # Profiling slots
     slots: Dict[str, ProfilingSlot] = Field(default_factory=dict)
     
+    # Context-Chained Dynamic State & Turn History
+    chained_state: Optional[DynamicChainedState] = None
+    dialogue_turns: List[DialogueTurn] = Field(default_factory=list)
+
     # Entities extracted by LLM
     extracted_entities: Dict[str, Any] = Field(default_factory=dict)
     

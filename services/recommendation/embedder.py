@@ -31,9 +31,11 @@ class CourseEmbedder:
             logger.info(f"Loading embedding model: {self.model_name}")
             self._model = SentenceTransformer(self.model_name)
             logger.info("Embedding model loaded successfully.")
-        except Exception as e:
+        except Exception as exc:  # noqa: BLE001 - embedding failures use deterministic fallback
             logger.warning(
-                f"SentenceTransformer not available ({e}). Using deterministic pseudo-embedder for testing."
+                "SentenceTransformer not available (%s). "
+                "Using deterministic pseudo-embedder for testing.",
+                exc,
             )
             self._model = None
 
@@ -55,8 +57,11 @@ class CourseEmbedder:
                     return vec[: self.dim]
                 else:
                     return vec + [0.0] * (self.dim - len(vec))
-            except Exception as e:
-                logger.warning(f"Model embedding failed: {e}. Falling back to pseudo-embedder.")
+            except Exception as exc:  # noqa: BLE001 - model failure is recoverable
+                logger.warning(
+                    "Model embedding failed: %s. Falling back to pseudo-embedder.",
+                    exc,
+                )
 
         # Deterministic pseudo-embedding based on text hash for testing
         import hashlib

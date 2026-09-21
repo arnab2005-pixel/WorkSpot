@@ -36,15 +36,15 @@ async def lifespan(app: FastAPI):
     try:
         await fsm.mongo_service.connect()
         logger.info(f"Connected to MongoDB: {fsm.mongo_service._connected}")
-    except Exception as e:
-        logger.warning(f"MongoDB connection notice: {e}")
+    except Exception as exc:  # noqa: BLE001 - MongoDB connection is optional
+        logger.warning("MongoDB connection notice: %s", exc)
 
     # Connect Redis session cache
     try:
         await fsm.session_cache.connect()
         logger.info(f"Connected to Redis: {fsm.session_cache._connected}")
-    except Exception as e:
-        logger.warning(f"Redis connection notice: {e}")
+    except Exception as exc:  # noqa: BLE001 - Redis connection is optional
+        logger.warning("Redis connection notice: %s", exc)
 
     yield
 

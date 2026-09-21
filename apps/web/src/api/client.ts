@@ -17,6 +17,7 @@ export interface SessionResponse {
   profile: Profile;
   createdAt: string;
   updatedAt: string;
+  options?: string[];
 }
 
 export interface InteractResponse {
@@ -30,6 +31,7 @@ export interface InteractResponse {
   max_capital_subsidy_inr: number;
   credit_desk_routing: string | null;
   is_complete: boolean;
+  options?: string[];
 }
 
 export interface AdvisorResponse {

@@ -49,3 +49,5 @@ node_modules/
 .env*
 
 dist/
+.nemotron/
+scripts/nemotron_agent.py

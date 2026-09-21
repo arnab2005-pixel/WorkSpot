@@ -136,6 +136,6 @@ async def ensure_indexes(client: MongoDBClient = None) -> Dict[str, List[str]]:
         logger.info(f"Database indexes verified across {len(created_indexes)} collections.")
         return created_indexes
 
-    except Exception as e:
-        logger.error(f"Error ensuring MongoDB indexes: {e}", exc_info=True)
+    except Exception as exc:
+        logger.exception("Error ensuring MongoDB indexes: %s", exc)
         return created_indexes
