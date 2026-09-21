@@ -2,9 +2,12 @@ name: Continuous Integration
 
 on:
   push:
-    branches: [Modeltinkering]
+    branches: [Modeltinkering, dev, main]
   pull_request:
-    branches: [main, Modeltinkering]
+    branches: [main, Modeltinkering, dev]
+
+env:
+  PYTHONPATH: .
 
 jobs:
   ci:
@@ -45,22 +48,26 @@ jobs:
       - name: Type check with MyPy
         run: mypy --ignore-missing-imports config/ schemas/ services/ api/
 
-      # --- Node.js setup ---
+      # --- Node.js & pnpm setup ---
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 9.15.0
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: apps/web/package-lock.json
+          cache: "pnpm"
 
-      - name: Install frontend dependencies
-        run: cd apps/web && npm install
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: TypeScript type check
-        run: cd apps/web && npm run typecheck
+        run: pnpm -r typecheck
 
       - name: Build frontend
-        run: cd apps/web && npm run build
+        run: pnpm -r build
 
       # --- Tests ---
       - name: Wait for MongoDB
