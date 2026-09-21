@@ -312,7 +312,41 @@ function Onboarding(p: any) { if (p.screen === "welcome") return <div className=
 }
 
 function LanguageMenu({ language, setLanguage, onClose }: { language: string; setLanguage: (value: string) => void; onClose: () => void }) { const [query, setQuery] = useState(""); const selected = getLanguageConfig(language); const filtered = supportedLanguages.filter((item) => `${item.name} ${item.nativeName}`.toLowerCase().includes(query.toLowerCase())); return <div className="language-popover" role="dialog" aria-label="Choose your language"><div className="popover-heading"><div><span className="eyebrow">LANGUAGE</span><strong>Choose your language</strong></div><button aria-label="Close language selector" onClick={onClose}>×</button></div><input className="language-search" autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search language..." /> <div className="language-list" role="listbox">{filtered.map((item) => <button role="option" aria-selected={item.name === selected.name} className={item.name === selected.name ? "language-row selected" : "language-row"} key={item.code} onClick={() => { setLanguage(item.name); onClose(); }}><span><strong>{item.nativeName}</strong><small>{item.name}</small></span><span>{item.name === selected.name ? "✓" : ""}</span></button>)}</div></div>; }
-function LanguageSelector({ language, setLanguage }: { language: string; setLanguage: (value: string) => void }) { const [open, setOpen] = useState(false); const selected = getLanguageConfig(language); useEffect(() => { const close = (event: MouseEvent | KeyboardEvent) => { const outside = event instanceof MouseEvent && !(event.target as Element).closest(".language-selector"); const escape = event instanceof KeyboardEvent && event.key === "Escape"; if (outside || escape) setOpen(false); }; document.addEventListener("mousedown", close); document.addEventListener("keydown", close); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); }; }, []); return <div className="header-popover-wrap language-selector"><button className="header-language" aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{selected.nativeName}⌄</button>{open && <LanguageMenu language={language} setLanguage={setLanguage} onClose={() => setOpen(false)} />}</div>; }
+function LanguageSelector({ language, setLanguage }: { language: string; setLanguage: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const selected = getLanguageConfig(language);
+  useEffect(() => {
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      const outside = event instanceof MouseEvent && !(event.target as Element).closest(".language-selector");
+      const escape = event instanceof KeyboardEvent && event.key === "Escape";
+      if (outside || escape) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
+  return (
+    <div className="header-popover-wrap language-selector">
+      <button
+        type="button"
+        className={`header-language${open ? " active" : ""}`}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`Select language. Current language: ${selected.name}`}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="header-language-text">{selected.nativeName}</span>
+        <svg className="header-language-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+          <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      {open && <LanguageMenu language={language} setLanguage={setLanguage} onClose={() => setOpen(false)} />}
+    </div>
+  );
+}
 
 function ProfileMenu({ goTo, onClose, onLogout }: { goTo: (target: Screen) => void; onClose: () => void; onLogout: () => void }) { useEffect(() => { const close = (event: MouseEvent | KeyboardEvent) => { const outside = event instanceof MouseEvent && !(event.target as Element).closest(".header-popover-wrap"); const escape = event instanceof KeyboardEvent && event.key === "Escape"; if (outside || escape) onClose(); }; document.addEventListener("mousedown", close); document.addEventListener("keydown", close); return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", close); }; }, [onClose]); return <div className="profile-popover" role="menu"><div className="profile-popover-head"><span className="avatar">AD</span><div><strong>Anita Das</strong><small>Bamboo Craft Worker</small></div></div><button role="menuitem" onClick={() => { goTo("profile"); onClose(); }}>My Profile <span>→</span></button><button role="menuitem" onClick={onClose}>Settings <span>→</span></button><button role="menuitem" onClick={() => { goTo("help"); onClose(); }}>Help <span>→</span></button><button className="profile-logout" role="menuitem" onClick={() => { onLogout(); onClose(); }}>Logout <span>↗</span></button></div>; }
 
@@ -349,14 +383,13 @@ function AppFrame(p: any) {
       {!(["profile", "opportunities", "opportunityDetail", "advisor", "progress", "notifications", "help", "home"] as string[]).includes(p.screen) && <HomePage {...p} />}
     </main>
     {(() => {
-      const mobileNavIndex = p.screen === "home" ? 0 : (p.screen === "opportunities" || p.screen === "opportunityDetail") ? 1 : p.screen === "advisor" ? 2 : p.screen === "progress" ? 3 : -1;
+      const mobileNavIndex = p.screen === "home" ? 0 : (p.screen === "opportunities" || p.screen === "opportunityDetail") ? 1 : p.screen === "advisor" ? 2 : -1;
       return (
         <nav className="mobile-nav" aria-label="Mobile Navigation" style={{ "--active-index": mobileNavIndex } as React.CSSProperties}>
           <div className="mobile-nav-indicator" aria-hidden="true" />
-          <button className={mobileNavIndex === 0 ? "active" : ""} aria-current={mobileNavIndex === 0 ? "page" : undefined} onClick={() => p.goTo("home" as Screen)}><span>⌂</span>{c.nav[0]}</button>
-          <button className={mobileNavIndex === 1 ? "active" : ""} aria-current={mobileNavIndex === 1 ? "page" : undefined} onClick={() => p.goTo("opportunities")}><span>▣</span>{c.nav[2]}</button>
-          <button className={mobileNavIndex === 2 ? "active" : ""} aria-current={mobileNavIndex === 2 ? "page" : undefined} onClick={() => p.goTo("advisor")}><span>✦</span>{c.nav[3]}</button>
-          <button className={mobileNavIndex === 3 ? "active" : ""} aria-current={mobileNavIndex === 3 ? "page" : undefined} onClick={() => p.goTo("progress")}><span>↗</span>{c.nav[4]}</button>
+          <button className={mobileNavIndex === 0 ? "active" : ""} aria-current={mobileNavIndex === 0 ? "page" : undefined} onClick={() => p.goTo("home" as Screen)}><span className="nav-icon">⌂</span><span className="nav-label">{c.nav[0]}</span></button>
+          <button className={mobileNavIndex === 1 ? "active" : ""} aria-current={mobileNavIndex === 1 ? "page" : undefined} onClick={() => p.goTo("opportunities")}><span className="nav-icon">▣</span><span className="nav-label">{c.nav[2]}</span></button>
+          <button className={mobileNavIndex === 2 ? "active" : ""} aria-current={mobileNavIndex === 2 ? "page" : undefined} onClick={() => p.goTo("advisor")}><span className="nav-icon">✦</span><span className="nav-label">{c.nav[3]}</span></button>
         </nav>
       );
     })()}
