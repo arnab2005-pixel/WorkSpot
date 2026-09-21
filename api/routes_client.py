@@ -23,7 +23,7 @@ from services.orchestrator.state_machine import ConversationFSM
 from schemas.session import FSMState
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/v1", tags=["client"])
+router = APIRouter(tags=["client"])
 
 # Shared FSM instance
 fsm = ConversationFSM()

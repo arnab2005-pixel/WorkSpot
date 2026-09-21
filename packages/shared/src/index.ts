@@ -1,6 +1,22 @@
 import { z } from "zod";
 
-export const languages = ["English", "Hindi", "Bengali"] as const;
+export const languages = [
+  "English",
+  "Hindi",
+  "Bengali",
+  "Marathi",
+  "Tamil",
+  "Telugu",
+  "Kannada",
+  "Malayalam",
+  "Gujarati",
+  "Punjabi",
+  "Odia",
+  "Assamese",
+  "Bhojpuri",
+  "Maithili",
+  "Urdu"
+] as const;
 export type Language = (typeof languages)[number];
 
 export const interviewStates = ["idle", "language", "consent", "interview", "results", "confirm", "done"] as const;

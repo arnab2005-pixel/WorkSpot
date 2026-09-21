@@ -54,7 +54,7 @@ static_path.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
 
 # Register routers
-app.include_router(client_router)
+app.include_router(client_router, prefix="/api/v1")
 app.include_router(client_router, prefix="", tags=["client-alias"])
 app.include_router(mock_router)
 app.include_router(ws_router)
