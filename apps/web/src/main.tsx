@@ -88,6 +88,15 @@ function App() {
     const path = explicitPath ?? (target === "profile" ? "/profile" : target === "opportunities" ? "/opportunities" : target === "advisor" ? "/ai" : target === "progress" ? "/progress" : target === "notifications" ? "/notifications" : target === "help" ? "/help" : target === "opportunityDetail" ? `/opportunities/${activeOpportunity.id}` : "/");
     window.history.pushState({}, "", path);
     window.scrollTo({ top: 0, behavior: "smooth" });
+
+    if (target === "opportunities" && sessionId) {
+      void apiClient.fetchRecommendations(sessionId).then((recs) => {
+        if (recs && recs.length > 0) {
+          setOpportunitiesList(recs);
+          if (recs[0]) setActiveOpportunity(recs[0]);
+        }
+      }).catch(() => {});
+    }
   }
 
   function startRecording() {
@@ -187,16 +196,22 @@ function App() {
         setDynamicOptions(res.options);
       }
       setAnswer("");
-      if (res.is_complete || res.current_state === "RECOMMENDATION_DELIVERY" || res.current_state === "COMPLETED") {
+
+      const isLastQuestion = interviewIndex >= 10;
+      if (res.is_complete || res.current_state === "RECOMMENDATION_DELIVERY" || res.current_state === "COMPLETED" || isLastQuestion) {
         goTo("opportunities");
       } else {
         setScreen("interview");
-        setInterviewIndex((prev) => Math.min(prev + 1, 10));
+        setInterviewIndex((prev) => prev + 1);
       }
     } catch (err) {
       console.warn("submitTurn error, fallback progression:", err);
-      setInterviewIndex((prev) => (prev >= 10 ? 10 : prev + 1));
-      setScreen("interview");
+      if (interviewIndex >= 10) {
+        goTo("opportunities");
+      } else {
+        setInterviewIndex((prev) => prev + 1);
+        setScreen("interview");
+      }
     } finally {
       setProcessing(false);
     }
@@ -210,8 +225,11 @@ function App() {
   function nextInterview() {
     if (answer.trim()) {
       void submitTurn(answer);
+    } else if (interviewIndex >= 10) {
+      goTo("opportunities");
     } else {
-      setInterviewIndex((value) => (value >= 10 ? 10 : value + 1));
+      setInterviewIndex((value) => value + 1);
+      setScreen("interview");
     }
   }
 
@@ -255,11 +273,13 @@ function App() {
         setDynamicOptions(res.options);
       }
       setAnswer("");
-      if (res.is_complete || res.current_state === "RECOMMENDATION_DELIVERY" || res.current_state === "COMPLETED") {
+
+      const isLastQuestion = interviewIndex >= 10;
+      if (res.is_complete || res.current_state === "RECOMMENDATION_DELIVERY" || res.current_state === "COMPLETED" || isLastQuestion) {
         goTo("opportunities");
       } else {
         setScreen("interview");
-        setInterviewIndex((prev) => Math.min(prev + 1, 10));
+        setInterviewIndex((prev) => prev + 1);
       }
     } catch (err) {
       console.warn("Audio file upload error:", err);

@@ -184,6 +184,7 @@ class SessionData(BaseModel):
     language: str = "hi"
     dialect: str | None = "bhojpuri_mixed"
     chained_state: DynamicChainedState | None = None
+    dialogue_turns: list["DialogueTurn"] = Field(default_factory=list)
 
     # Profiling slots
     slots: dict[str, ProfilingSlot] = Field(default_factory=dict)
@@ -210,8 +211,8 @@ class SessionData(BaseModel):
     last_error: str | None = None
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime | None = None
 
     # Metadata

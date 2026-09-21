@@ -193,13 +193,16 @@ class VLLMClient:
                 trade = "बिजली मिस्त्री / Electrician"
 
         # Mobility detection
-        mobility = known_slots.get("mobility_radius_km", 15)
-        mobility_matches = re.findall(r"(\d+)\s*(किलोमीटर|किमी|km)", t)
-        if mobility_matches:
-            try:
-                mobility = int(mobility_matches[0][0])
-            except ValueError:
-                pass
+        if any(w in t for w in ["बाहर नहीं", "नहीं जा सकते", "घर पर ही", "गाँव में ही", "0 km", "0किमी", "0km"]):
+            mobility = 0
+        else:
+            mobility = known_slots.get("mobility_radius_km", 15)
+            mobility_matches = re.findall(r"(\d+)\s*(किलोमीटर|किमी|km)", t)
+            if mobility_matches:
+                try:
+                    mobility = int(mobility_matches[0][0])
+                except ValueError:
+                    pass
 
         # Employment intent
         intent = known_slots.get("employment_intent")
