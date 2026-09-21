@@ -44,7 +44,16 @@ app.post("/followup/schedule", async () => ({ scheduled: true, message: "A distr
 
 app.get<{ Params: { lang: string; promptId: string } }>(
   "/tts/:lang/:promptId",
-  async (request) => ({ cached: true, ...request.params })
+  async (request, reply) => {
+    const { lang, promptId } = request.params;
+    const isValidLang = /^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(lang);
+    const isValidPromptId = /^[A-Za-z0-9_-]{1,64}$/.test(promptId);
+
+    if (!isValidLang) return reply.code(400).send({ error: "Invalid lang parameter" });
+    if (!isValidPromptId) return reply.code(400).send({ error: "Invalid promptId parameter" });
+
+    return { cached: true, lang, promptId };
+  }
 );
 app.post("/tts/dynamic", async () => ({ queued: true }));
 
