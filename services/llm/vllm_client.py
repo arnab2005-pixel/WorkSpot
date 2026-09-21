@@ -10,23 +10,24 @@ import logging
 import os
 import re
 import time
-from typing import Optional, Dict, Any
+from typing import Any
+
 import httpx
 from pydantic import ValidationError
 
 from config.config import get_settings
-from schemas.session import ExtractedSlots
 from schemas.beneficiary_profile import (
+    ConversationalResponse,
+    DialogueState,
+    EnterpriseAspirations,
     LLMIntakePayload,
     ProfileSlots,
-    DialogueState,
-    ConversationalResponse,
-    EnterpriseAspirations,
 )
+from schemas.session import ExtractedSlots
 from services.llm.prompt_templates import (
-    SYSTEM_PROMPT_PM_AJAY,
-    SLOT_EXTRACTION_PROMPT,
     ENTERPRISE_INTAKE_PROMPT,
+    SLOT_EXTRACTION_PROMPT,
+    SYSTEM_PROMPT_PM_AJAY,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,9 +42,9 @@ class VLLMClient:
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        model_name: Optional[str] = None,
-        timeout: Optional[float] = None,
+        base_url: str | None = None,
+        model_name: str | None = None,
+        timeout: float | None = None,
     ):
         self.base_url = (base_url or settings.vllm_base_url).rstrip("/")
         self.model_name = model_name or settings.vllm_model_name
@@ -93,11 +94,11 @@ class VLLMClient:
         self,
         user_transcript: str,
         current_state: str,
-        known_slots: Optional[Dict[str, Any]] = None,
+        known_slots: dict[str, Any] | None = None,
     ) -> ExtractedSlots:
         """
         Extract conversational slots and produce dialect-friendly next response.
-        
+
         Uses vLLM /v1/chat/completions with json_schema constraint.
         Falls back to Gemini API (if GEMINI_API_KEY is present) or rule-based extractor if unreachable.
         """
@@ -147,6 +148,12 @@ class VLLMClient:
             ValueError,
             ValidationError,
         ) as exc:
+            json.JSONDecodeError,
+            KeyError,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as e:
             logger.warning(
                 "vLLM server call failed (%s). Trying Gemini API fallback...",
                 exc,
@@ -167,7 +174,7 @@ class VLLMClient:
         self,
         transcript: str,
         current_state: str,
-        known_slots: Dict[str, Any],
+        known_slots: dict[str, Any],
     ) -> ExtractedSlots:
         """
         Deterministic rule-based fallback for tests, offline dev, or vLLM outages.
@@ -213,12 +220,18 @@ class VLLMClient:
         if current_state == "INIT_CONSENT" or known_slots.get("consent") is not True:
             if any(w in t for w in ["हाँ", "हां", "ठीक", "शुरू", "yes", "sure", "बताईं"]):
                 missing_slot = "LOCATION"
-                spoken_response = "बहुत बढ़िया! आप किस जिले और ब्लॉक के रहने वाले हैं? जैसे वाराणसी या चंदौली?"
+                spoken_response = (
+                    "बहुत बढ़िया! आप किस जिले और ब्लॉक के रहने वाले हैं? जैसे वाराणसी या चंदौली?"
+                )
             else:
                 missing_slot = "CONSENT"
-                spoken_response = "क्या हम पीएम-अजय योजना के बारे में आगे बात कर सकते हैं? कृपया हाँ कहें।"
+                spoken_response = (
+                    "क्या हम पीएम-अजय योजना के बारे में आगे बात कर सकते हैं? कृपया हाँ कहें।"
+                )
 
-        elif current_state == "GEOGRAPHIC_INTAKE" or not known_slots.get("district_code"):
+        elif current_state == "GEOGRAPHIC_INTAKE" or not known_slots.get(
+            "district_code"
+        ):
             missing_slot = "TRADE"
             spoken_response = "आप कौन सा हुनर या काम-धंधा जानते हैं या सीखना चाहते हैं? जैसे सिलाई, बढ़ई या राजमिस्त्री?"
 
@@ -240,11 +253,15 @@ class VLLMClient:
 
         else:
             missing_slot = "COMPLETE"
-            spoken_response = "आपकी पूरी जानकारी दर्ज कर ली गई है। नज़दीकी केंद्र की जानकारी पेश की जा रही है।"
+            spoken_response = (
+                "आपकी पूरी जानकारी दर्ज कर ली गई है। नज़दीकी केंद्र की जानकारी पेश की जा रही है।"
+            )
 
         return ExtractedSlots(
             detected_trade=trade,
-            prior_experience_years=float(known_slots.get("prior_experience_years", 0.0)),
+            prior_experience_years=float(
+                known_slots.get("prior_experience_years", 0.0)
+            ),
             mobility_radius_km=int(mobility),
             employment_intent=intent,
             missing_slot=missing_slot,
@@ -282,7 +299,9 @@ class VLLMClient:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(f"{self.base_url}/chat/completions", json=payload)
+                resp = await client.post(
+                    f"{self.base_url}/chat/completions", json=payload
+                )
                 resp.raise_for_status()
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
@@ -299,6 +318,12 @@ class VLLMClient:
                 "vLLM enterprise intake call failed: %s. "
                 "Running dialect fallback parser.",
                 exc,
+            TypeError,
+            ValueError,
+            ValidationError,
+        ) as e:
+            logger.warning(
+                f"vLLM enterprise intake call failed: {e}. Running dialect fallback parser."
             )
             return self._fallback_extract_enterprise(user_transcript, current_step)
 
@@ -348,7 +373,10 @@ class VLLMClient:
         elif any(w in t for w in ["3 लाख", "4 लाख", "5 लाख"]):
             capital_tag = "MEDIUM_2LAKH_TO_5LAKH"
             scheme_tag = "STAND_UP_INDIA"
-        elif any(w in t for w in ["25-30", "25 हजार", "30 हजार", "40 हजार", "50 हजार", "हजार"]):
+        elif any(
+            w in t
+            for w in ["25-30", "25 हजार", "30 हजार", "40 हजार", "50 हजार", "हजार"]
+        ):
             capital_tag = "MICRO_UNDER_50K"
             scheme_tag = "PM_AJAY_CAPITAL_SUBSIDY"
 
@@ -380,7 +408,9 @@ class VLLMClient:
 
         enterprise = EnterpriseAspirations(
             is_interested_in_business=True,
-            business_type="REPAIR_SERVICE" if "मरम्मत" in trade or "जूता" in trade else "RETAIL_SHOP",
+            business_type="REPAIR_SERVICE"
+            if "मरम्मत" in trade or "जूता" in trade
+            else "RETAIL_SHOP",
             enterprise_model="INDIVIDUAL",
             estimated_capital_required_inr=capital_tag,
             own_investment_capacity_inr=None,

@@ -10,6 +10,8 @@ import logging
 import re
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
+from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 from config.config import get_settings
@@ -23,13 +25,19 @@ from schemas.session import (
     DynamicChainedState,
 )
 from services.llm.vllm_client import VLLMClient
+    ExtractedSlots,
+    FSMState,
+    ProfilingSlot,
+    SessionData,
+    SlotStatus,
+)
 from services.llm.prompt_templates import (
     GREETING_CONSENT_PROMPT,
     LOCATION_PROMPT,
     TRADE_PROMPT,
-    MOBILITY_INTENT_PROMPT,
-    FALLBACK_REPROMPT,
 )
+from services.llm.vllm_client import VLLMClient
+from services.orchestrator.session_cache import SessionCache
 from services.recommendation.embedder import CourseEmbedder
 from services.recommendation.mongo_service import MongoService
 from services.orchestrator.session_cache import SessionCache
@@ -54,10 +62,10 @@ class ConversationFSM:
 
     def __init__(
         self,
-        session_cache: Optional[SessionCache] = None,
-        llm_client: Optional[VLLMClient] = None,
-        embedder: Optional[CourseEmbedder] = None,
-        mongo_service: Optional[MongoService] = None,
+        session_cache: SessionCache | None = None,
+        llm_client: VLLMClient | None = None,
+        embedder: CourseEmbedder | None = None,
+        mongo_service: MongoService | None = None,
     ):
         self.session_cache = session_cache or SessionCache()
         self.llm_client = llm_client or VLLMClient()
@@ -67,13 +75,14 @@ class ConversationFSM:
     async def init_session(
         self,
         session_id: str,
-        caller_id: Optional[str] = None,
-        call_uuid: Optional[str] = None,
+        caller_id: str | None = None,
+        call_uuid: str | None = None,
     ) -> SessionData:
         """Create and persist a new session at INIT_CONSENT state."""
         phone_hash = None
         if caller_id:
             import hashlib
+
             phone_hash = hashlib.sha256(caller_id.encode()).hexdigest()
 
         chained = DynamicChainedState(
@@ -90,10 +99,16 @@ class ConversationFSM:
             previous_state=FSMState.INIT,
             chained_state=chained,
             slots={
-                "CONSENT": ProfilingSlot(slot_name="CONSENT", status=SlotStatus.PENDING),
-                "LOCATION": ProfilingSlot(slot_name="LOCATION", status=SlotStatus.PENDING),
+                "CONSENT": ProfilingSlot(
+                    slot_name="CONSENT", status=SlotStatus.PENDING
+                ),
+                "LOCATION": ProfilingSlot(
+                    slot_name="LOCATION", status=SlotStatus.PENDING
+                ),
                 "TRADE": ProfilingSlot(slot_name="TRADE", status=SlotStatus.PENDING),
-                "MOBILITY": ProfilingSlot(slot_name="MOBILITY", status=SlotStatus.PENDING),
+                "MOBILITY": ProfilingSlot(
+                    slot_name="MOBILITY", status=SlotStatus.PENDING
+                ),
                 "INTENT": ProfilingSlot(slot_name="INTENT", status=SlotStatus.PENDING),
             },
         )
@@ -104,7 +119,7 @@ class ConversationFSM:
         self,
         session_id: str,
         user_transcript: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Execute one step of the context-chained conversation FSM based on user input.
         """
@@ -129,6 +144,17 @@ class ConversationFSM:
             "detected_trade": session.extracted_entities.get("detected_trade", chained.trade),
             "mobility_radius_km": session.extracted_entities.get("mobility_radius_km", chained.mobility_km or 15),
             "employment_intent": session.extracted_entities.get("employment_intent", chained.employment_intent),
+            "consent": session.slots.get(
+                "CONSENT", ProfilingSlot(slot_name="CONSENT")
+            ).value,
+            "district_code": session.extracted_entities.get(
+                "district_code", "UP_VARANASI"
+            ),
+            "detected_trade": session.extracted_entities.get("detected_trade"),
+            "mobility_radius_km": session.extracted_entities.get(
+                "mobility_radius_km", 15
+            ),
+            "employment_intent": session.extracted_entities.get("employment_intent"),
         }
 
         extracted: ExtractedSlots = await self.llm_client.extract_slots(
@@ -138,6 +164,8 @@ class ConversationFSM:
         )
 
         recommended_courses: List[Dict[str, Any]] = []
+        recommended_courses: list[dict[str, Any]] = []
+        next_prompt = extracted.spoken_response_indic
         next_state = current_state
         slot_key = ""
         slot_val = None
@@ -215,11 +243,37 @@ class ConversationFSM:
                 session.slots["INTENT"].status = SlotStatus.FILLED
                 session.slots["INTENT"].value = "SELF_EMPLOYMENT"
                 intake = await self.llm_client.extract_enterprise_intake(user_transcript, "ENTERPRISE_SCOPING")
+
+            # Check if beneficiary explicitly mentions enterprise/shop/business
+            is_biz = any(
+                w in user_transcript.lower()
+                for w in [
+                    "दुकान",
+                    "खुद का",
+                    "मशीन",
+                    "स्वरोज़गार",
+                    "खोलना",
+                    "बिजनेस",
+                    "लेईला",
+                    "खरीदे",
+                ]
+            )
+            if is_biz:
+                next_state = FSMState.ENTERPRISE_SCOPING
+                intake = await self.llm_client.extract_enterprise_intake(
+                    user_transcript, "ENTERPRISE_SCOPING"
+                )
                 if intake.profile_slots.enterprise_details:
                     ent_data = intake.profile_slots.enterprise_details
-                    session.extracted_entities["enterprise_details"] = ent_data.model_dump()
+                    session.extracted_entities["enterprise_details"] = (
+                        ent_data.model_dump()
+                    )
                     if session.phone_hash:
                         await self.mongo_service.process_enterprise_routing(session.phone_hash, ent_data)
+                        await self.mongo_service.process_enterprise_routing(
+                            session.phone_hash, ent_data
+                        )
+                next_prompt = intake.conversational_response.spoken_text_indic
             else:
                 next_state = FSMState.MOBILITY_AND_INTENT
 
@@ -232,17 +286,27 @@ class ConversationFSM:
             chained.employment_intent = "SELF_EMPLOYMENT"
             chained.capital_needed = "₹30,000-₹50,000 (GIA Asset Grant)"
             intake = await self.llm_client.extract_enterprise_intake(user_transcript, "ENTERPRISE_SCOPING")
+        elif current_state == FSMState.ENTERPRISE_SCOPING:
+            intake = await self.llm_client.extract_enterprise_intake(
+                user_transcript, "ENTERPRISE_SCOPING"
+            )
             if intake.profile_slots.enterprise_details:
                 ent_data = intake.profile_slots.enterprise_details
                 session.extracted_entities["enterprise_details"] = ent_data.model_dump()
                 if session.phone_hash:
-                    await self.mongo_service.process_enterprise_routing(session.phone_hash, ent_data)
+                    await self.mongo_service.process_enterprise_routing(
+                        session.phone_hash, ent_data
+                    )
 
             # Move to mobility/training format or directly to recommendations if mobility is already known
             if session.slots.get("MOBILITY") and session.slots["MOBILITY"].status == SlotStatus.FILLED:
                 next_state = FSMState.RECOMMENDATION_DELIVERY
             else:
                 next_state = FSMState.TRAINING_FORMAT
+            next_state = FSMState.MOBILITY_AND_INTENT
+            next_prompt = (
+                "प्रशिक्षण और बाज़ार आने-जाने के लिए आप रोज़ कितनी दूर (किलोमीटर) तक जा सकते हैं?"
+            )
 
         # ==========================================
         # Node 4: MOBILITY_AND_INTENT / TRAINING_FORMAT
@@ -281,11 +345,29 @@ class ConversationFSM:
             # If user mentions self-employment, extract enterprise details for GIA routing
             if intent == "SELF_EMPLOYMENT" and "enterprise_details" not in session.extracted_entities:
                 intake = await self.llm_client.extract_enterprise_intake(user_transcript, "ENTERPRISE_SCOPING")
+        elif current_state == FSMState.MOBILITY_AND_INTENT:
+            intent = extracted.employment_intent or session.extracted_entities.get(
+                "employment_intent", "SELF_EMPLOYMENT"
+            )
+            mobility = extracted.mobility_radius_km or 15
+
+            # If user mentions self-employment here without prior enterprise scoping, extract enterprise goals
+            if (
+                intent in ("SELF_EMPLOYMENT", "HYBRID")
+                and "enterprise_details" not in session.extracted_entities
+            ):
+                intake = await self.llm_client.extract_enterprise_intake(
+                    user_transcript, "ENTERPRISE_SCOPING"
+                )
                 if intake.profile_slots.enterprise_details:
                     ent_data = intake.profile_slots.enterprise_details
-                    session.extracted_entities["enterprise_details"] = ent_data.model_dump()
+                    session.extracted_entities["enterprise_details"] = (
+                        ent_data.model_dump()
+                    )
                     if session.phone_hash:
-                        await self.mongo_service.process_enterprise_routing(session.phone_hash, ent_data)
+                        await self.mongo_service.process_enterprise_routing(
+                            session.phone_hash, ent_data
+                        )
 
             # Check for contradiction: WAGE + 0 km
             if intent == "WAGE_EMPLOYMENT" and mobility == 0 and current_state != FSMState.CONTEXTUAL_REPAIR:
@@ -325,8 +407,13 @@ class ConversationFSM:
             district = session.extracted_entities.get("district_code", chained.district or "UP_VARANASI")
             query_embedding = self.embedder.embed_text(trade_query)
 
-            is_enterprise = chained.employment_intent in ("SELF_EMPLOYMENT", "HYBRID") or "enterprise_details" in session.extracted_entities
-            has_exp = float(session.extracted_entities.get("prior_experience_years", 0.0)) > 0
+            is_enterprise = (
+                intent in ("SELF_EMPLOYMENT", "HYBRID")
+                or "enterprise_details" in session.extracted_entities
+            )
+            has_exp = (
+                float(session.extracted_entities.get("prior_experience_years", 0.0)) > 0
+            )
 
             raw_courses = await self.mongo_service.search_courses(
                 query_embedding=query_embedding,
@@ -338,24 +425,40 @@ class ConversationFSM:
             )
 
             for c in raw_courses:
-                recommended_courses.append({
-                    "qp_code": c.get("qp_code", "AMH/Q0301"),
-                    "course_name": c.get("course_name", "Self Employed Tailor"),
-                    "training_center": c.get("training_center", f"{district} District Skill Center"),
-                    "stipend": c.get("stipend", "₹1500 per month"),
-                    "pathway_type": c.get("pathway_type", "VOCATIONAL_TRAINING"),
-                })
+                recommended_courses.append(
+                    {
+                        "qp_code": c.get("qp_code", "AMH/Q0301"),
+                        "course_name": c.get("course_name", "Self Employed Tailor"),
+                        "training_center": c.get(
+                            "training_center", f"{district} Skill Center, Cantt"
+                        ),
+                        "stipend": c.get("stipend", "₹1500 per month"),
+                        "pathway_type": c.get("pathway_type", "VOCATIONAL_TRAINING"),
+                    }
+                )
             session.recommendations = recommended_courses
 
-        # ---------------------------------------------------------
-        # Synthesize Context-Chained Question and Dynamic MCQ Options
-        # ---------------------------------------------------------
-        chained.current_step = next_state.value
-        spoken_question, dynamic_options = synthesize_context_chained_turn(
-            state=chained,
-            target_state=next_state,
-            user_transcript=user_transcript,
-        )
+            ent_details = session.extracted_entities.get("enterprise_details", {})
+            cap_req = ent_details.get("estimated_capital_required_inr")
+
+            if cap_req == "MICRO_UNDER_50K":
+                next_prompt = (
+                    f"आपके पास के ब्लॉक में {recommended_courses[0]['course_name']} केंद्र है। "
+                    f"साथ ही पीएम-अजय योजना के तहत उपकरण व दुकान के लिए ₹50,000 की पूंजीगत सब्सिडी (GIA) हेतु "
+                    f"आपका फॉर्म जिला कार्यालय (DPIU) भेजा जा रहा है।"
+                )
+            elif cap_req == "SMALL_50K_TO_2LAKH":
+                next_prompt = (
+                    f"आपके पास के ब्लॉक में {recommended_courses[0]['course_name']} केंद्र है। "
+                    f"और 2 लाख तक के ऋण हेतु आपका प्रोफ़ाइल NSFDC माइक्रो-क्रेडिट डेस्क को भेजा जा रहा है।"
+                )
+            else:
+                top_name = (
+                    recommended_courses[0]["course_name"]
+                    if recommended_courses
+                    else "प्रशिक्षण"
+                )
+                next_prompt = f"आपके पास के ब्लॉक में {top_name} और संबंधित कौशल के दो प्रशिक्षण केंद्र हैं। क्या आप दाखिले की जानकारी चाहते हैं?"
 
         chained.active_conversational_hook = spoken_question
         chained.options = dynamic_options
@@ -380,12 +483,14 @@ class ConversationFSM:
         await self.session_cache.save_session(session)
 
         updated_slots = {
-            "detected_trade": session.extracted_entities.get("detected_trade", chained.trade),
-            "mobility_radius_km": session.extracted_entities.get("mobility_radius_km", chained.mobility_km or 15),
-            "employment_intent": session.extracted_entities.get("employment_intent", chained.employment_intent),
-            "district": chained.district,
-            "block": chained.block,
-            "missing_slot": "COMPLETE" if next_state in (FSMState.RECOMMENDATION_DELIVERY, FSMState.COMPLETED) else extracted.missing_slot,
+            "detected_trade": session.extracted_entities.get("detected_trade"),
+            "mobility_radius_km": session.extracted_entities.get(
+                "mobility_radius_km", 15
+            ),
+            "employment_intent": session.extracted_entities.get("employment_intent"),
+            "missing_slot": "COMPLETE"
+            if next_state in (FSMState.RECOMMENDATION_DELIVERY, FSMState.COMPLETED)
+            else extracted.missing_slot,
         }
 
         return {

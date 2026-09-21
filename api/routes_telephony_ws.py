@@ -13,20 +13,19 @@ Handles:
 import asyncio
 import json
 import logging
-from typing import Optional
+
 import numpy as np
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from config.config import get_settings
 from schemas.websocket_events import (
-    WSMessageType,
     ClearBufferEvent,
-    TranscriptInterimEvent,
     TranscriptFinalEvent,
+    WSMessageType,
 )
-from services.audio.vad_filter import SileroVAD, VADState
-from services.audio.resampler import AudioResampler
 from services.asr.whisper_worker import WhisperASRWorker
+from services.audio.resampler import AudioResampler
+from services.audio.vad_filter import SileroVAD, VADState
 from services.orchestrator.state_machine import ConversationFSM
 from services.tts.indic_tts_worker import IndicTTSWorker
 
@@ -248,12 +247,12 @@ async def telephony_media_ws(websocket: WebSocket, session_id: str):
         while True:
             message = await websocket.receive()
 
-            if "bytes" in message and message["bytes"]:
+            if message.get("bytes"):
                 # Ingress raw 8kHz PCM audio chunk
                 raw_bytes = message["bytes"]
                 await session.raw_audio_queue.put(raw_bytes)
 
-            elif "text" in message and message["text"]:
+            elif message.get("text"):
                 # Ingress JSON control frame
                 try:
                     payload = json.loads(message["text"])

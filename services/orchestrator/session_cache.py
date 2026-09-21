@@ -4,9 +4,8 @@ Maintains state machine sessions with automatic TTL expiration (1800s default)
 and graceful in-memory fallback when Redis is unavailable.
 """
 
-import json
 import logging
-from typing import Optional, Dict, Any
+
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 from pydantic import ValidationError
@@ -25,13 +24,13 @@ class SessionCache:
 
     def __init__(
         self,
-        redis_url: Optional[str] = None,
-        ttl_seconds: Optional[int] = None,
+        redis_url: str | None = None,
+        ttl_seconds: int | None = None,
     ):
         self.redis_url = redis_url or settings.redis_url
         self.ttl_seconds = ttl_seconds or settings.session_ttl_seconds
-        self._redis: Optional[aioredis.Redis] = None
-        self._memory_cache: Dict[str, str] = {}
+        self._redis: aioredis.Redis | None = None
+        self._memory_cache: dict[str, str] = {}
         self._connected = False
 
     async def connect(self):
@@ -83,7 +82,7 @@ class SessionCache:
             self._memory_cache[key] = data_str
             return True
 
-    async def get_session(self, session_id: str) -> Optional[SessionData]:
+    async def get_session(self, session_id: str) -> SessionData | None:
         """Load session data by ID."""
         await self.connect()
         key = self._key(session_id)
@@ -117,7 +116,7 @@ class SessionCache:
             try:
                 await self._redis.delete(key)
                 return True
-            except RedisError as exc:
-                logger.error("Redis delete failed: %s", exc)
+            except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
+                logger.error(f"Redis delete failed: {e}")
                 return False
         return True

@@ -9,8 +9,9 @@ Wires:
 """
 
 import os
-from pathlib import Path
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -127,6 +128,7 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
+
     listen_port = int(os.environ.get("PORT", settings.port))
     uvicorn.run(
         "api.server:app",

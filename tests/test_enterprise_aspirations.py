@@ -4,12 +4,13 @@ Verifies PM-AJAY GIA subsidy (up to 50k), NSFDC micro-credit, and EDP/RPL course
 """
 
 import pytest
+
 from schemas.beneficiary_profile import (
-    EnterpriseAspirations,
-    ProfileSlots,
-    DialogueState,
     ConversationalResponse,
+    DialogueState,
+    EnterpriseAspirations,
     LLMIntakePayload,
+    ProfileSlots,
 )
 from services.llm.vllm_client import VLLMClient
 from services.recommendation.mongo_service import MongoService
@@ -53,7 +54,10 @@ def test_enterprise_aspirations_schema():
     )
 
     assert payload.profile_slots.enterprise_details.is_interested_in_business is True
-    assert payload.profile_slots.enterprise_details.estimated_capital_required_inr == "MICRO_UNDER_50K"
+    assert (
+        payload.profile_slots.enterprise_details.estimated_capital_required_inr
+        == "MICRO_UNDER_50K"
+    )
     assert payload.profile_slots.standardized_sector == "Leather & Leather Goods"
 
 
@@ -61,7 +65,7 @@ def test_enterprise_aspirations_schema():
 async def test_bhojpuri_dialect_enterprise_parsing():
     """
     Verify dialect parsing on rural Bhojpuri / Hindi mix beneficiary utterance:
-    'हमार बाबूजी चमड़ा के काम करत रहलन, हमहू थोड़ा-बहुत जूता सी लेईला। शहर मजदूरी करे ना जाइब, 
+    'हमार बाबूजी चमड़ा के काम करत रहलन, हमहू थोड़ा-बहुत जूता सी लेईला। शहर मजदूरी करे ना जाइब,
     गांव के बजारिए में आपन छोट दुकान खोले के बा। बस मशीन खरीदे खातिर 25-30 हजार रुपया के मदद मिल जात त ठीक रहित।'
     """
     client = VLLMClient()

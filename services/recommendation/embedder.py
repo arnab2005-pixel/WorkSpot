@@ -4,7 +4,7 @@ Uses BAAI/bge-m3 or Indic-BERT with deterministic fallback for local testing.
 """
 
 import logging
-from typing import List, Optional
+
 import numpy as np
 
 from config.config import get_settings
@@ -18,7 +18,7 @@ class CourseEmbedder:
     Generates 768-dimensional dense semantic embeddings for vocational courses and queries.
     """
 
-    def __init__(self, model_name: Optional[str] = None, dim: int = 768):
+    def __init__(self, model_name: str | None = None, dim: int = 768):
         self.model_name = model_name or settings.embedding_model
         self.dim = dim
         self._model = None
@@ -28,10 +28,11 @@ class CourseEmbedder:
         """Lazy load sentence-transformers / huggingface model with fallback."""
         try:
             from sentence_transformers import SentenceTransformer
+
             logger.info(f"Loading embedding model: {self.model_name}")
             self._model = SentenceTransformer(self.model_name)
             logger.info("Embedding model loaded successfully.")
-        except Exception as exc:  # noqa: BLE001 - embedding failures use deterministic fallback
+        except Exception as e:  # noqa: BLE001 - embedding failure must use deterministic fallback
             logger.warning(
                 "SentenceTransformer not available (%s). "
                 "Using deterministic pseudo-embedder for testing.",
@@ -39,7 +40,7 @@ class CourseEmbedder:
             )
             self._model = None
 
-    def embed_text(self, text: str) -> List[float]:
+    def embed_text(self, text: str) -> list[float]:
         """
         Embed a single text string into a 768-dim normalized vector.
         """
@@ -57,14 +58,14 @@ class CourseEmbedder:
                     return vec[: self.dim]
                 else:
                     return vec + [0.0] * (self.dim - len(vec))
-            except Exception as exc:  # noqa: BLE001 - model failure is recoverable
+            except Exception as e:  # noqa: BLE001 - embedding failure must use deterministic fallback
                 logger.warning(
-                    "Model embedding failed: %s. Falling back to pseudo-embedder.",
-                    exc,
+                    f"Model embedding failed: {e}. Falling back to pseudo-embedder."
                 )
 
         # Deterministic pseudo-embedding based on text hash for testing
         import hashlib
+
         h = hashlib.sha256(text.encode("utf-8")).digest()
         rng = np.random.RandomState(int.from_bytes(h[:4], "little"))
         vec = rng.randn(self.dim).astype(np.float32)
@@ -73,6 +74,6 @@ class CourseEmbedder:
             vec = vec / norm
         return vec.tolist()
 
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
+    def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of text strings."""
         return [self.embed_text(t) for t in texts]

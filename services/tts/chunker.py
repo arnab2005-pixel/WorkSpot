@@ -6,7 +6,7 @@ ensuring the neural vocoder runs incrementally for minimum First-Packet-Time.
 """
 
 import re
-from typing import List, Generator
+from collections.abc import Generator
 
 
 class TextChunker:
@@ -21,17 +21,17 @@ class TextChunker:
         self.min_chunk_chars = min_chunk_chars
         self.max_chunk_chars = max_chunk_chars
 
-    def split_into_chunks(self, text: str) -> List[str]:
+    def split_into_chunks(self, text: str) -> list[str]:
         """
         Split text into synthesis chunks.
-        
+
         Merges very short fragments (< min_chunk_chars) to avoid unnatural acoustic pauses.
         """
         if not text:
             return []
 
         tokens = self.DELIMITERS_PATTERN.split(text)
-        raw_chunks: List[str] = []
+        raw_chunks: list[str] = []
         current = ""
 
         for token in tokens:
@@ -48,7 +48,7 @@ class TextChunker:
             raw_chunks.append(current.strip())
 
         # Merge undersized chunks
-        merged_chunks: List[str] = []
+        merged_chunks: list[str] = []
         accum = ""
 
         for c in raw_chunks:
@@ -74,5 +74,4 @@ class TextChunker:
 
     def stream_chunks(self, text: str) -> Generator[str, None, None]:
         """Generator streaming chunks lazily."""
-        for chunk in self.split_into_chunks(text):
-            yield chunk
+        yield from self.split_into_chunks(text)

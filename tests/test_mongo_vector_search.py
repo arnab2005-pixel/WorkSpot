@@ -2,10 +2,17 @@
 Unit tests for MongoDB Atlas Vector Search integration and course schemas.
 """
 
-import pytest
 from datetime import datetime, timezone
+
+import pytest
+
+from schemas.beneficiary import (
+    BeneficiaryRecord,
+    ConsentAudit,
+    Demographics,
+    ProfilingSlots,
+)
 from schemas.course import CourseDocument
-from schemas.beneficiary import BeneficiaryRecord, Demographics, ProfilingSlots, ConsentAudit
 from services.recommendation.embedder import CourseEmbedder
 from services.recommendation.mongo_service import MongoService
 

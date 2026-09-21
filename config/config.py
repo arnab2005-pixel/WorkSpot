@@ -4,8 +4,7 @@ All settings loaded from environment variables with sensible defaults.
 """
 
 from functools import lru_cache
-from typing import Optional, List
-from pydantic import Field
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -115,7 +114,7 @@ class Settings(BaseSettings):
     sip_domain: str = "pm-ajay.local"
 
     # Supported languages/dialects
-    supported_languages: List[str] = ["hi", "bhojpuri", "maithili", "magahi", "awadhi"]
+    supported_languages: list[str] = ["hi", "bhojpuri", "maithili", "magahi", "awadhi"]
     default_language: str = "hi"
     default_dialect: str = "bhojpuri_mixed"
 
