@@ -77,7 +77,9 @@ class WhisperASRWorker:
                 logger.info("WhisperModel loaded successfully on requested device.")
             except Exception as cuda_err:  # noqa: BLE001 - Whisper model failure must use fallback
                 logger.warning(
-                    f"Failed to load Whisper on {device} ({cuda_err}). Falling back to CPU int8."
+                    "Failed to load Whisper on %s (%s). Falling back to CPU int8.",
+                    device,
+                    cuda_err,
                 )
                 self.model = WhisperModel(
                     self.model_size,
@@ -85,9 +87,11 @@ class WhisperASRWorker:
                     compute_type="int8",
                 )
                 logger.info("WhisperModel loaded on CPU fallback.")
-        except Exception as e:  # noqa: BLE001 - Whisper model failure must use fallback
+        except Exception as exc:  # noqa: BLE001 - fallback to mock mode
             logger.warning(
-                f"faster-whisper not available or model load failed: {e}. Running in mock/fallback mode."
+                "faster-whisper not available or model load failed: %s. "
+                "Running in mock/fallback mode.",
+                exc,
             )
             self.model = None
 

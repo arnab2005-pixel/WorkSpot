@@ -10,6 +10,7 @@ Includes fallback cosine-similarity matcher for standalone/offline MongoDB testi
 
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -128,7 +129,8 @@ class MongoService:
                 return results
             except OperationFailure as op_err:
                 logger.warning(
-                    f"Atlas $vectorSearch not supported on local Mongo ({op_err}). Running in-memory cosine fallback."
+                    "Atlas $vectorSearch not supported on local Mongo (%s). Running in-memory cosine fallback.",
+                    op_err,
                 )
                 return await self._fallback_vector_search(
                     query_embedding,
@@ -171,17 +173,29 @@ class MongoService:
             )
 
         try:
+            dist_clean = (
+                district_code.replace("UP_", "")
+                .replace("BR_", "")
+                .replace("MP_", "")
+                .replace("RJ_", "")
+                .replace("MH_", "")
+                .replace("WB_", "")
+                .strip()
+            )
             query = {
                 "status": "ACTIVE",
-                "district_availability": district_code,
+                "$or": [
+                    {"district_availability": district_code},
+                    {"district_availability": {"$regex": dist_clean, "$options": "i"}},
+                ],
                 "min_education_tier": {"$lte": education_tier},
             }
             cursor = self.db.nsqf_courses.find(query)
-            docs = await cursor.to_list(length=50)
+            docs = await cursor.to_list(length=100)
 
             if not docs:
                 cursor = self.db.nsqf_courses.find({"status": "ACTIVE"})
-                docs = await cursor.to_list(length=50)
+                docs = await cursor.to_list(length=100)
 
             if not docs:
                 return self._mock_course_results(
@@ -396,4 +410,35 @@ class MongoService:
             return None
         except (PyMongoError, ValidationError, ValueError, TypeError) as e:
             logger.error(f"Failed to get beneficiary: {e}")
+            return None
+
+    async def save_session_record(self, session_id: str, data: dict[str, Any]) -> bool:
+        """Persist or update conversational session document in MongoDB."""
+        await self.connect()
+        if not self._connected or self.db is None:
+            return False
+
+        try:
+            data["session_id"] = session_id
+            data["updated_at"] = datetime.now(timezone.utc)
+            await self.db.sessions.update_one(
+                {"session_id": session_id},
+                {"$set": data},
+                upsert=True,
+            )
+            return True
+        except PyMongoError as exc:
+            logger.error("Failed to save session to MongoDB: %s", exc)
+            return False
+
+    async def get_session_record(self, session_id: str) -> dict[str, Any] | None:
+        """Retrieve conversational session document from MongoDB."""
+        await self.connect()
+        if not self._connected or self.db is None:
+            return None
+
+        try:
+            return await self.db.sessions.find_one({"session_id": session_id})
+        except PyMongoError as exc:
+            logger.error("Failed to get session from MongoDB: %s", exc)
             return None

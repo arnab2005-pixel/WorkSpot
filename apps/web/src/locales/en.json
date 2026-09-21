@@ -1,0 +1,7 @@
+{
+  "navigation": { "home": "Home", "profile": "My Profile", "opportunities": "Opportunities", "ai": "WorkSpot AI", "progress": "Progress", "notifications": "Notifications", "help": "Help", "settings": "Settings", "logout": "Logout" },
+  "common": { "continue": "Continue", "listen": "Listen", "send": "Send Answer", "save": "Save", "apply": "Apply" },
+  "profile": { "score": "Work & Progress Score", "complete": "Profile completeness" },
+  "voice": { "speakIn": "Speak in" },
+  "language": { "choose": "Choose your language", "search": "Search language..." }
+}

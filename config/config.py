@@ -5,6 +5,7 @@ All settings loaded from environment variables with sensible defaults.
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,12 +32,12 @@ class Settings(BaseSettings):
     workers: int = 1
 
     # Redis (session cache)
-    redis_url: str = "redis://localhost:6379"
+    redis_url: str = "redis://127.0.0.1:6379"
     redis_max_connections: int = 50
     session_ttl_seconds: int = 1800  # 30 minutes
 
     # MongoDB
-    mongodb_url: str = "mongodb://localhost:27017"
+    mongodb_url: str = "mongodb://127.0.0.1:27017"
     mongodb_database: str = "pm_ajay"
     mongodb_max_pool_size: int = 50
 
@@ -45,6 +46,11 @@ class Settings(BaseSettings):
     vllm_model_name: str = "qwen2.5-3b-instruct"
     vllm_timeout_seconds: float = 10.0
     vllm_max_retries: int = 2
+
+    # Gemini API Fallback (when local vLLM is offline)
+    gemini_api_key: str | None = Field(default=None, validation_alias="GEMINI_API_KEY")
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_timeout_seconds: float = 10.0
 
     # TTS (indic-tts FastPitch + HiFi-GAN)
     tts_base_url: str = "http://localhost:8001"

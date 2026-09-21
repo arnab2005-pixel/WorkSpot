@@ -44,6 +44,16 @@ class Demographics(BaseModel):
     education_level: str = Field(
         ..., description="e.g., 'none', 'class_5', 'class_8', 'class_10'"
     )
+    education_tier: int = Field(
+        default=0,
+        description="Mapped education tier: 0=None, 1=Class 5, 2=Class 8, 3=Class 10, 4=Class 12+",
+        ge=0,
+        le=4,
+    )
+    caste_category: str | None = Field(
+        default="SCHEDULED_CASTE",
+        description="Beneficiary caste/social category for PM-AJAY eligibility",
+    )
 
 
 class ProfilingSlots(BaseModel):
@@ -111,6 +121,16 @@ class ConsentAudit(BaseModel):
     consent_version: str = Field(default="1.0", description="Consent form version")
     language: str = Field(
         default="hi", description="Language in which consent was given"
+    )
+    purpose: str = Field(
+        default="PM-AJAY Vocational Discovery & Livelihood Scheme Matching",
+        description="Specified purpose of processing under DPDP Act 2023",
+    )
+    consent_withdrawn: bool = Field(
+        default=False, description="Whether consent has been revoked by data principal"
+    )
+    withdrawal_timestamp: datetime | None = Field(
+        default=None, description="Timestamp of consent withdrawal"
     )
 
 

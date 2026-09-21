@@ -17,11 +17,23 @@ from .beneficiary_profile import (
     LLMIntakePayload,
     ProfileSlots,
 )
+from .call_session import (
+    CallLatencyMetrics,
+    CallSessionRecord,
+    TurnLatencyBreakdown,
+    TurnRecord,
+)
 from .course import (
     CourseCreate,
     CourseDocument,
     CourseRecommendation,
     CourseSearchQuery,
+)
+from .dpiu_application import (
+    DpiuApplicationRecord,
+)
+from .lgd_district import (
+    LgdDistrictRecord,
 )
 from .session import (
     ExtractedSlots,
@@ -51,6 +63,8 @@ __all__ = [
     "BeneficiaryCreate",
     "BeneficiaryRecord",
     "BeneficiaryUpdate",
+    "CallLatencyMetrics",
+    "CallSessionRecord",
     "ClearBufferEvent",
     "ConsentAudit",
     "ConversationalResponse",
@@ -60,11 +74,13 @@ __all__ = [
     "CourseSearchQuery",
     "Demographics",
     "DialogueState",
+    "DpiuApplicationRecord",
     "EnterpriseAspirations",
     "ExtractedSlots",
     "FSMState",
     "HangupEvent",
     "LLMIntakePayload",
+    "LgdDistrictRecord",
     "ProfileSlots",
     "ProfilingSlots",
     "SessionCreate",
@@ -75,6 +91,8 @@ __all__ = [
     "StartCallEvent",
     "TranscriptFinalEvent",
     "TranscriptInterimEvent",
+    "TurnLatencyBreakdown",
+    "TurnRecord",
     "WSIncomingMessage",
     "WSMessageType",
     "WSOutgoingMessage",

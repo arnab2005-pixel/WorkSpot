@@ -5,7 +5,7 @@ These models represent NSQF courses stored in MongoDB with vector embeddings
 for semantic search via Atlas Vector Search.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -94,12 +94,26 @@ class CourseDocument(BaseModel):
     status: Literal["ACTIVE", "INACTIVE", "ARCHIVED"] = Field(
         default="ACTIVE", description="Course availability status"
     )
+    training_center: str | None = Field(
+        default=None, description="Primary training center location name"
+    )
     training_partners: list[str] = Field(
         default_factory=list,
         description="Names of training centers/partners offering this course",
     )
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    pathway_type: Literal[
+        "VOCATIONAL_TRAINING", "RPL_CERTIFICATION", "EDP_ENTREPRENEURSHIP"
+    ] = Field(
+        default="VOCATIONAL_TRAINING",
+        description="PM-AJAY pathway: standard training, RPL certification, or EDP incubation",
+    )
+    target_occupations: list[str] = Field(
+        default_factory=list,
+        description="Colloquial trade and occupation keywords in Hindi/English",
+    )
+    tags: list[str] = Field(default_factory=list, description="Search indexing tags")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Additional metadata for filtering
     gender_preference: Literal["ANY", "MALE", "FEMALE", "TRANSGENDER"] | None = Field(

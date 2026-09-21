@@ -21,16 +21,58 @@ class FSMState(str, Enum):
     GEOGRAPHIC_INTAKE = "GEOGRAPHIC_INTAKE"
     LOCATION_CONFIRMED = "LOCATION_CONFIRMED"
     VOCATIONAL_DISCOVERY = "VOCATIONAL_DISCOVERY"
+    EXPERIENCE_DEPTH = "EXPERIENCE_DEPTH"
+    ASPIRATIONAL_PROBE = "ASPIRATIONAL_PROBE"
+    ENTERPRISE_CAPITAL = "ENTERPRISE_CAPITAL"
+    TRAINING_FORMAT = "TRAINING_FORMAT"
     TRADE_IDENTIFIED = "TRADE_IDENTIFIED"
     ENTERPRISE_SCOPING = "ENTERPRISE_SCOPING"
     MOBILITY_AND_INTENT = "MOBILITY_AND_INTENT"
     MOBILITY_CONFIRMED = "MOBILITY_CONFIRMED"
+    CONTEXTUAL_REPAIR = "CONTEXTUAL_REPAIR"
     RECOMMENDATION_DELIVERY = "RECOMMENDATION_DELIVERY"
     RECOMMENDATION_DELIVERED = "RECOMMENDATION_DELIVERED"
     ENROLLMENT_INITIATED = "ENROLLMENT_INITIATED"
     COMPLETED = "COMPLETED"
     ERROR = "ERROR"
     HANGUP = "HANGUP"
+
+
+class DialogueTurn(BaseModel):
+    """Individual turn record in the context-chained conversation."""
+
+    turn_index: int
+    system_question: str
+    user_raw_transcript: str
+    extracted_slot_key: str
+    extracted_slot_value: Any
+    confidence: float = 1.0
+
+
+class DynamicChainedState(BaseModel):
+    """
+    Context-Chained State Tracking Schema.
+    Tracks accumulated profile slots and dialogue trajectory metadata.
+    """
+
+    session_id: str
+    current_step: str
+    # Accumulated Profile
+    district: str | None = None
+    block: str | None = None
+    trade: str | None = None
+    prior_experience: str | None = None
+    employment_intent: str | None = None  # WAGE vs SELF_EMPLOYMENT
+    premise_type: str | None = None
+    capital_needed: str | None = None
+    mobility_km: int | None = None
+    education_level: str | None = None
+
+    # Trajectory & Memory Chaining
+    turn_history: list[DialogueTurn] = Field(default_factory=list)
+    last_turn_summary: str | None = None
+    active_conversational_hook: str | None = None
+    options: list[str] = Field(default_factory=list)
 
 
 class SlotStatus(str, Enum):
@@ -141,6 +183,7 @@ class SessionData(BaseModel):
     previous_state: FSMState | None = None
     language: str = "hi"
     dialect: str | None = "bhojpuri_mixed"
+    chained_state: DynamicChainedState | None = None
 
     # Profiling slots
     slots: dict[str, ProfilingSlot] = Field(default_factory=dict)

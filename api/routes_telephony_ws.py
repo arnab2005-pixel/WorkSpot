@@ -91,8 +91,8 @@ class TelephonyCallSession:
         """Send JSON control frame to FreeSWITCH / client."""
         try:
             await self.ws.send_text(json.dumps(event_dict, ensure_ascii=False))
-        except Exception as e:  # noqa: BLE001 - WebSocket frame delivery failure must not crash session
-            logger.debug(f"Failed to send WS control frame: {e}")
+        except Exception as exc:  # noqa: BLE001 - logging-only failure
+            logger.debug("Failed to send WS control frame: %s", exc)
 
     async def handle_barge_in(self):
         """Interrupt active TTS synthesis and instruct FreeSWITCH to clear playout buffer."""
@@ -277,11 +277,11 @@ async def telephony_media_ws(websocket: WebSocket, session_id: str):
                     elif event_type == WSMessageType.BARGE_IN:
                         await session.handle_barge_in()
 
-                except (json.JSONDecodeError, TypeError, KeyError) as json_err:
-                    logger.warning(f"Error parsing WS text message: {json_err}")
+                except (json.JSONDecodeError, KeyError) as json_err:
+                    logger.warning("Error parsing WS text message: %s", json_err)
 
     except WebSocketDisconnect:
-        logger.info(f"Telephony WebSocket disconnected for session {session_id}")
+        logger.info("Telephony WebSocket disconnected for session %s", session_id)
     except Exception:
         logger.exception("Error in telephony WebSocket loop")
     finally:

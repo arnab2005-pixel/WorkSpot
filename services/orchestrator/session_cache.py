@@ -8,6 +8,7 @@ import logging
 
 import redis.asyncio as aioredis
 from pydantic import ValidationError
+from redis.exceptions import RedisError
 
 from config.config import get_settings
 from schemas.session import SessionData
@@ -46,9 +47,10 @@ class SessionCache:
             await self._redis.ping()
             self._connected = True
             logger.info(f"Connected to Redis session cache at {self.redis_url}")
-        except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
+        except RedisError as exc:
             logger.warning(
-                f"Redis connection failed: {e}. Falling back to in-memory session cache."
+                "Redis connection failed: %s. Falling back to in-memory session cache.",
+                exc,
             )
             self._connected = False
 
@@ -71,8 +73,8 @@ class SessionCache:
             try:
                 await self._redis.setex(key, self.ttl_seconds, data_str)
                 return True
-            except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
-                logger.error(f"Redis setex failed: {e}. Falling back to memory.")
+            except RedisError as exc:
+                logger.error("Redis setex failed: %s. Falling back to memory.", exc)
                 self._memory_cache[key] = data_str
                 return True
         else:
@@ -88,8 +90,8 @@ class SessionCache:
         if self._connected and self._redis:
             try:
                 raw_data = await self._redis.get(key)
-            except Exception as e:  # noqa: BLE001 - Redis failure must use memory fallback
-                logger.error(f"Redis get failed: {e}. Checking memory fallback.")
+            except RedisError as exc:
+                logger.error("Redis get failed: %s. Checking memory fallback.", exc)
                 raw_data = self._memory_cache.get(key)
         else:
             raw_data = self._memory_cache.get(key)
@@ -99,8 +101,8 @@ class SessionCache:
 
         try:
             return SessionData.model_validate_json(raw_data)
-        except (ValidationError, ValueError, TypeError) as e:
-            logger.error(f"Error deserializing session {session_id}: {e}")
+        except (ValidationError, ValueError, TypeError) as exc:
+            logger.error("Error deserializing session %s: %s", session_id, exc)
             return None
 
     async def delete_session(self, session_id: str) -> bool:

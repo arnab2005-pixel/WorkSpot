@@ -43,3 +43,11 @@ htmlcov/
 # Audio
 *.wav
 *.mp3
+
+node_modules/
+.pnpm-store/
+.env*
+
+dist/
+.nemotron/
+scripts/nemotron_agent.py
