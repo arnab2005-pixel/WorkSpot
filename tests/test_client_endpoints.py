@@ -116,3 +116,76 @@ async def test_client_recommendations_and_advisor():
         adv_data = adv_resp.json()
         assert "50,000" in adv_data["reply"] or "अनुदान" in adv_data["reply"]
         assert len(adv_data["suggestions"]) > 0
+
+
+@pytest.mark.asyncio
+async def test_audio_transcribe_upload():
+    """Test the /audio/transcribe endpoint with a synthetic WAV file."""
+    import io
+    import wave
+    import numpy as np
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Generate a valid WAV file (1 second of silence at 16kHz)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            samples = np.zeros(16000, dtype=np.int16)
+            wf.writeframes(samples.tobytes())
+        buf.seek(0)
+
+        resp = await client.post(
+            "/api/v1/audio/transcribe",
+            files={"file": ("test.wav", buf, "audio/wav")},
+            data={"session_id": "", "language": "hi"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "transcript" in data
+        assert "duration_seconds" in data
+        assert data["duration_seconds"] > 0
+
+
+@pytest.mark.asyncio
+async def test_audio_interact_upload():
+    """Test the combined /audio/interact endpoint: upload WAV → transcribe → FSM step."""
+    import io
+    import wave
+    import numpy as np
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # 1. Create session first
+        sess_resp = await client.post(
+            "/api/v1/session",
+            json={"language": "Hindi", "phone_number": "+919876543210"},
+        )
+        session_id = sess_resp.json()["session_id"]
+
+        # 2. Generate a valid WAV file (1 second of silence at 16kHz)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(16000)
+            samples = np.zeros(16000, dtype=np.int16)
+            wf.writeframes(samples.tobytes())
+        buf.seek(0)
+
+        # 3. Upload audio and interact
+        resp = await client.post(
+            "/api/v1/audio/interact",
+            files={"file": ("test.wav", buf, "audio/wav")},
+            data={"session_id": session_id, "language": "Hindi"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        # Should return the same shape as /interact
+        assert "session_id" in data
+        assert "current_state" in data
+        assert "spoken_response_indic" in data
+        assert "profile" in data
+        assert "options" in data

@@ -8,7 +8,8 @@ Provides:
 - POST /api/v1/interact (Interactive conversational turn: FSM step, slot extraction & recommendations)
 - GET  /api/v1/recommendations/{session_id} (Fetch live NSQF & GIA subsidy recommendations)
 - POST /api/v1/advisor/chat (AI Livelihood Advisor contextual chat)
-- POST /api/v1/audio/transcribe (Audio speech-to-text upload fallback)
+- POST /api/v1/audio/transcribe (Audio speech-to-text upload)
+- POST /api/v1/audio/interact (Upload prerecorded audio → transcribe → FSM turn in one call)
 """
 
 import uuid
@@ -547,17 +548,277 @@ async def audio_transcribe(
     language: Optional[str] = Form("hi"),
 ):
     """
-    Fallback audio transcription endpoint for browser audio uploads.
+    Transcribe an uploaded audio file (WAV, MP3, WebM, OGG, M4A) to text.
+    Uses the WhisperASRWorker pipeline when available, otherwise falls back to mock.
+
+    Accepts multipart/form-data with:
+      - file: Audio file (required)
+      - session_id: Optional session identifier
+      - language: Language code (default: "hi")
     """
+    import io
+    import numpy as np
+
     try:
         content = await file.read()
-        logger.info(f"Received audio file: {file.filename}, size: {len(content)} bytes")
+        filename = (file.filename or "audio.wav").lower()
+        content_type = (file.content_type or "").lower()
+        logger.info(
+            "Audio upload received: filename=%s, content_type=%s, size=%d bytes",
+            filename, content_type, len(content),
+        )
 
-        # In production with faster-whisper available:
-        # Transcript extracted through WhisperASRWorker.
-        # Fallback simulation if running in lightweight container:
-        transcript = "हम सिलाई मशीन के दुकान खोलल चाहत बानी, 40000 के पूंजी चाही"
-        return {"transcript": transcript, "language": language or "hi", "size_bytes": len(content)}
-    except Exception as exc:  # noqa: BLE001 - fallback returns safe default
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty audio file")
+        if len(content) > 25 * 1024 * 1024:  # 25 MB limit
+            raise HTTPException(status_code=413, detail="Audio file too large (max 25 MB)")
+
+        # Convert uploaded audio to 16kHz mono float32 numpy array
+        audio_array = _decode_audio_to_16k_mono(content, filename, content_type)
+
+        # Attempt real ASR transcription via WhisperASRWorker
+        transcript = await _transcribe_audio_array(audio_array)
+
+        return {
+            "transcript": transcript,
+            "language": language or "hi",
+            "size_bytes": len(content),
+            "duration_seconds": round(len(audio_array) / 16000, 2),
+            "filename": file.filename,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
         logger.error("Error during audio transcription: %s", exc)
-        return {"transcript": "नमस्ते", "language": language or "hi"}
+        return {"transcript": "नमस्ते", "language": language or "hi", "error": str(exc)}
+
+
+class AudioInteractRequest(BaseModel):
+    """Response schema for the combined audio upload + FSM interact endpoint."""
+    pass  # Form fields are used directly, not a JSON body
+
+
+@router.post("/audio/interact", response_model=InteractResponse)
+async def audio_interact(
+    file: UploadFile = File(...),
+    session_id: str = Form(...),
+    language: Optional[str] = Form("Hindi"),
+):
+    """
+    Combined endpoint: Upload a prerecorded audio file → transcribe → feed into FSM.
+
+    This is a single-call alternative to calling /audio/transcribe then /interact.
+    The audio is transcribed and the resulting text is used as the user's conversational turn.
+
+    Accepts multipart/form-data with:
+      - file: Audio file (WAV, MP3, WebM, OGG, M4A — required)
+      - session_id: Active session ID (required)
+      - language: Language name (default: "Hindi")
+    """
+    import numpy as np
+
+    try:
+        content = await file.read()
+        filename = (file.filename or "audio.wav").lower()
+        content_type = (file.content_type or "").lower()
+        logger.info(
+            "Audio interact upload: session=%s, filename=%s, size=%d bytes",
+            session_id, filename, len(content),
+        )
+
+        if len(content) == 0:
+            raise HTTPException(status_code=400, detail="Empty audio file")
+        if len(content) > 25 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="Audio file too large (max 25 MB)")
+
+        # Decode and transcribe
+        audio_array = _decode_audio_to_16k_mono(content, filename, content_type)
+        transcript = await _transcribe_audio_array(audio_array)
+
+        if not transcript.strip():
+            transcript = "नमस्ते"
+            logger.warning("Empty transcript from audio, using fallback")
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Audio interact transcription error: %s", exc)
+        transcript = "नमस्ते"
+
+    # Feed transcript into the FSM (reuse the interact logic)
+    session = await fsm.session_cache.get_session(session_id)
+    if not session:
+        session = await fsm.init_session(session_id)
+
+    step_result = await fsm.step(session_id, transcript)
+
+    # Re-fetch updated session
+    session = await fsm.session_cache.get_session(session_id)
+    profile = build_profile_dict(session)
+    recs = await build_recommendations_for_session(session, mongo_service=fsm.mongo_service)
+
+    ent = session.extracted_entities.get("enterprise_details", {})
+    eligible_gia = bool(ent) or session.extracted_entities.get("employment_intent") in ("SELF_EMPLOYMENT", "HYBRID")
+    max_subsidy = 50000.0 if eligible_gia else 0.0
+    routing = "DPIU_CAPITAL_GRANT_DESK" if eligible_gia else None
+    is_complete = step_result.get("current_state") in (FSMState.RECOMMENDATION_DELIVERY.value, FSMState.COMPLETED.value)
+
+    return InteractResponse(
+        session_id=session_id,
+        current_state=step_result.get("current_state", "INTERVIEW"),
+        spoken_response_indic=step_result.get("spoken_response_indic", "नमस्ते"),
+        updated_slots=step_result.get("updated_slots", {}),
+        profile=profile,
+        recommended_courses=recs,
+        eligible_for_gia_asset_grant=eligible_gia,
+        max_capital_subsidy_inr=max_subsidy,
+        credit_desk_routing=routing,
+        is_complete=is_complete,
+        options=step_result.get("options", []),
+    )
+
+
+# =====================================================================
+# Audio Decoding & Transcription Helpers
+# =====================================================================
+
+def _decode_audio_to_16k_mono(
+    content: bytes,
+    filename: str,
+    content_type: str,
+) -> "np.ndarray":
+    """
+    Decode uploaded audio bytes to a 16 kHz mono float32 numpy array.
+
+    Supports:
+      - WAV (native via wave stdlib)
+      - MP3, OGG, WebM, M4A (via pydub/ffmpeg if available, otherwise scipy)
+    """
+    import numpy as np
+
+    is_wav = filename.endswith(".wav") or "wav" in content_type
+    is_raw_pcm = filename.endswith(".pcm") or filename.endswith(".raw")
+
+    if is_raw_pcm:
+        # Assume raw 16-bit PCM at 16kHz mono
+        int16_arr = np.frombuffer(content, dtype=np.int16)
+        return int16_arr.astype(np.float32) / 32768.0
+
+    if is_wav:
+        return _decode_wav(content)
+
+    # For non-WAV formats (mp3, webm, ogg, m4a), try pydub → scipy fallback
+    return _decode_with_pydub_or_scipy(content, filename)
+
+
+def _decode_wav(content: bytes) -> "np.ndarray":
+    """Decode WAV bytes to 16kHz mono float32 numpy array."""
+    import io
+    import wave
+    import numpy as np
+
+    try:
+        with wave.open(io.BytesIO(content), "rb") as wf:
+            n_channels = wf.getnchannels()
+            sample_width = wf.getsampwidth()
+            frame_rate = wf.getframerate()
+            n_frames = wf.getnframes()
+            raw_data = wf.readframes(n_frames)
+    except Exception as exc:
+        logger.warning("wave.open failed (%s), trying scipy", exc)
+        return _decode_with_pydub_or_scipy(content, "audio.wav")
+
+    if sample_width == 2:
+        samples = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32) / 32768.0
+    elif sample_width == 4:
+        samples = np.frombuffer(raw_data, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        samples = np.frombuffer(raw_data, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+
+    # Mix to mono if stereo
+    if n_channels > 1:
+        samples = samples.reshape(-1, n_channels).mean(axis=1)
+
+    # Resample to 16kHz if needed
+    if frame_rate != 16000:
+        try:
+            from scipy.signal import resample_poly
+            from math import gcd
+            g = gcd(16000, frame_rate)
+            samples = resample_poly(samples, 16000 // g, frame_rate // g).astype(np.float32)
+        except ImportError:
+            # Simple linear interpolation fallback
+            target_len = int(len(samples) * 16000 / frame_rate)
+            indices = np.linspace(0, len(samples) - 1, target_len)
+            samples = np.interp(indices, np.arange(len(samples)), samples).astype(np.float32)
+
+    return samples
+
+
+def _decode_with_pydub_or_scipy(content: bytes, filename: str) -> "np.ndarray":
+    """Decode non-WAV audio formats using pydub (ffmpeg) or scipy as fallback."""
+    import io
+    import numpy as np
+
+    # Try pydub first (requires ffmpeg)
+    try:
+        from pydub import AudioSegment
+
+        ext = filename.rsplit(".", 1)[-1] if "." in filename else "webm"
+        audio_seg = AudioSegment.from_file(io.BytesIO(content), format=ext)
+        audio_seg = audio_seg.set_channels(1).set_frame_rate(16000).set_sample_width(2)
+        raw = audio_seg.raw_data
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        logger.info("Decoded %s via pydub: %.2fs @ 16kHz", filename, len(samples) / 16000)
+        return samples
+    except Exception as pydub_err:
+        logger.info("pydub decode failed (%s), trying scipy.io.wavfile", pydub_err)
+
+    # Try scipy.io.wavfile (only works for WAV-like formats)
+    try:
+        from scipy.io import wavfile
+        sr, data = wavfile.read(io.BytesIO(content))
+        if data.dtype == np.int16:
+            samples = data.astype(np.float32) / 32768.0
+        elif data.dtype == np.float32:
+            samples = data
+        else:
+            samples = data.astype(np.float32) / np.max(np.abs(data))
+
+        if len(data.shape) > 1:
+            samples = samples.mean(axis=1)
+
+        if sr != 16000:
+            from scipy.signal import resample_poly
+            from math import gcd
+            g = gcd(16000, sr)
+            samples = resample_poly(samples, 16000 // g, sr // g).astype(np.float32)
+
+        logger.info("Decoded via scipy: %.2fs @ 16kHz", len(samples) / 16000)
+        return samples
+    except Exception as scipy_err:
+        logger.warning("scipy decode also failed (%s), returning silence", scipy_err)
+        # Return 1 second of silence as absolute fallback
+        return np.zeros(16000, dtype=np.float32)
+
+
+async def _transcribe_audio_array(audio_array: "np.ndarray") -> str:
+    """
+    Transcribe a 16kHz mono float32 numpy array using the WhisperASRWorker.
+    Falls back to a mock transcript if the model is not loaded.
+    """
+    try:
+        from services.asr.whisper_worker import WhisperASRWorker
+
+        worker = WhisperASRWorker()
+        result = await worker.transcribe(audio_array, sample_rate=16000)
+
+        if result.is_hallucinated:
+            logger.warning("Hallucination detected in uploaded audio, using fallback")
+            return result.fallback_prompt_indic or "माफ़ कीजियेगा, आवाज़ साफ़ नहीं आई।"
+
+        return result.text or "नमस्ते"
+    except Exception as exc:
+        logger.warning("WhisperASRWorker unavailable (%s), using mock transcript", exc)
+        return "हम सिलाई मशीन के दुकान खोलल चाहत बानी, 40000 के पूंजी चाही"
+

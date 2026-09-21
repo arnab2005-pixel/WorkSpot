@@ -5,7 +5,7 @@ These models represent the conversational state machine managed by LangGraph,
 backed by Redis for ephemeral session state.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Literal, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
@@ -189,8 +189,8 @@ class SessionData(BaseModel):
     last_error: Optional[str] = None
     
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: Optional[datetime] = None
     
     # Metadata
@@ -217,11 +217,11 @@ class SessionData(BaseModel):
         slot.status = status
         slot.confidence = confidence
         slot.attempts += 1
-        slot.last_updated = datetime.utcnow()
+        slot.last_updated = datetime.now(timezone.utc)
         if raw_transcript:
             slot.raw_transcript = raw_transcript
         
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(timezone.utc)
     
     def is_slot_filled(self, slot_name: str) -> bool:
         """Check if a slot is filled or confirmed."""

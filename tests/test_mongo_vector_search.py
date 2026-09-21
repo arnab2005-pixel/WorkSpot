@@ -3,7 +3,7 @@ Unit tests for MongoDB Atlas Vector Search integration and course schemas.
 """
 
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from schemas.course import CourseDocument
 from schemas.beneficiary import BeneficiaryRecord, Demographics, ProfilingSlots, ConsentAudit
 from services.recommendation.embedder import CourseEmbedder
@@ -48,7 +48,7 @@ def test_beneficiary_record_schema_validation():
         ),
         consent_audit=ConsentAudit(
             voice_verified=True,
-            consent_timestamp=datetime.utcnow(),
+            consent_timestamp=datetime.now(timezone.utc),
             audio_vault_ref="s3://pm-ajay-vault/consent_123.wav",
         ),
     )

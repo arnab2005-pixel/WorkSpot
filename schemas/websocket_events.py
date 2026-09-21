@@ -5,7 +5,7 @@ These define the real-time full-duplex telephony protocol over WebSocket
 between FreeSWITCH (via mod_audio_fork) and the media server.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Literal, Any, Union
 from pydantic import BaseModel, Field, ConfigDict
 from enum import Enum
@@ -39,7 +39,7 @@ class WSIncomingMessage(BaseModel):
     
     event: WSMessageType
     session_id: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class WSOutgoingMessage(BaseModel):
@@ -47,7 +47,7 @@ class WSOutgoingMessage(BaseModel):
     
     event: WSMessageType
     session_id: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # ============================================================

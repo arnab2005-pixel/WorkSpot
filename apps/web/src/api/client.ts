@@ -155,3 +155,30 @@ export async function transcribeAudio(
   const data = await res.json();
   return data.transcript || "";
 }
+
+/**
+ * Upload a prerecorded audio file and process it as a conversational turn in one call.
+ * The backend transcribes the audio and feeds the result into the FSM.
+ */
+export async function uploadAudioAndInteract(
+  audioFile: File | Blob,
+  sessionId: string,
+  language: string = "Hindi",
+  filename?: string,
+): Promise<InteractResponse> {
+  const url = `${API_BASE}/api/v1/audio/interact`;
+  const formData = new FormData();
+  formData.append("file", audioFile, filename || (audioFile instanceof File ? audioFile.name : "upload.wav"));
+  formData.append("session_id", sessionId);
+  formData.append("language", language);
+
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to upload audio: ${res.statusText}`);
+  }
+  return res.json();
+}
